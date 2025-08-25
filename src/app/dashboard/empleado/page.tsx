@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, RefreshCw, Undo2 } from "lucide-react";
+import { CheckCircle, RefreshCw, Undo2, AlertTriangle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -32,48 +32,105 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, FormEvent, ChangeEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
-
-
-const initialAssets = [
-  { id: 'ASSET0123', name: 'Laptop Dell XPS', serial: 'SN12345', assignedDate: '2023-10-15', status: 'Activo' },
-  { id: 'ASSET0456', name: 'Monitor LG 27"', serial: 'SN54321', assignedDate: '2023-10-15', status: 'Activo' },
-  { id: 'ASSET0789', name: 'Taladro percutor', serial: 'SN67890', assignedDate: '2024-05-15', status: 'Recibido pendiente' },
-];
-
+import { getMyAssignedAssets, confirmAssetReceipt, submitReplacementRequest, Asset, getAssetById } from "@/lib/services";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export default function EmpleadoPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const [assignedAssets, setAssignedAssets] = useState(initialAssets);
+  const [assignedAssets, setAssignedAssets] = useState<Asset[]>([]);
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
+  const [selectedAssetId, setSelectedAssetId] = useState('');
+  const [imageFile, setImageFile] = useState<File | undefined>();
 
   useEffect(() => {
     if (!loading && (!user || !['Master', 'Empleado'].includes(user.role))) {
       router.push('/');
     }
   }, [user, loading, router]);
-  
-  const handleConfirmReceipt = (id: string) => {
-    setAssignedAssets(prev => prev.map(asset => asset.id === id ? { ...asset, status: 'Activo' } : asset));
-    toast({ title: "Recepción Confirmada", description: "El estado del activo ha sido actualizado a 'Activo'." });
+
+  useEffect(() => {
+    if (user) {
+      fetchAssets();
+    }
+  }, [user]);
+
+  const fetchAssets = async () => {
+    if (user?.id) {
+      const assets = await getMyAssignedAssets(user.id);
+      setAssignedAssets(assets);
+    }
+  };
+
+  const handleConfirmReceipt = async (id: string) => {
+    try {
+      await confirmAssetReceipt(id);
+      toast({ title: "Recepción Confirmada", description: "El estado del activo ha sido actualizado a 'Activo'." });
+      fetchAssets();
+    } catch (error) {
+      console.error("Error confirmando recepción:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo confirmar la recepción." });
+    }
   };
   
-  const handleRequestSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const asset = formData.get('asset');
-    const reason = formData.get('reason');
+    const reason = formData.get('reason') as string;
+    const justification = formData.get('justification') as string;
     
-    // Lógica para enviar la solicitud
-    console.log({ asset, reason });
+    if (!user || !selectedAssetId || !reason || !justification) {
+      toast({ variant: "destructive", title: "Error", description: "Por favor, complete todos los campos." });
+      return;
+    }
 
-    toast({ title: "Solicitud Enviada", description: `Su solicitud de reposición para ${asset} ha sido enviada.` });
-    setRequestDialogOpen(false);
+    const asset = await getAssetById(selectedAssetId);
+    if (!asset) {
+        toast({ variant: "destructive", title: "Error", description: "Activo no encontrado." });
+        return;
+    }
+
+    try {
+      await submitReplacementRequest({
+        employee: user.name,
+        employeeId: user.id,
+        asset: asset.name,
+        assetId: selectedAssetId,
+        serial: asset.serial,
+        reason,
+        justification,
+        imageFile,
+      });
+      toast({ title: "Solicitud Enviada", description: `Su solicitud de reposición para ${asset.name} ha sido enviada.` });
+      setRequestDialogOpen(false);
+      // Reset form state
+      setSelectedAssetId('');
+      setImageFile(undefined);
+    } catch(error) {
+        console.error("Error enviando solicitud:", error);
+        toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud." });
+    }
   };
 
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setImageFile(e.target.files[0]);
+    }
+  };
 
   if (loading || !user) {
     return <div>Cargando...</div>;
@@ -109,9 +166,18 @@ export default function EmpleadoPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="asset" className="text-right">Activo</Label>
-                  <Input id="asset" name="asset" placeholder="Ej: Laptop SN12345" className="col-span-3" required/>
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="asset" className="text-right">Activo</Label>
+                    <Select onValueChange={setSelectedAssetId} required>
+                        <SelectTrigger className="col-span-3">
+                            <SelectValue placeholder="Seleccione un activo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {assignedAssets.filter(a => a.status === 'Activo').map(asset => (
+                                <SelectItem key={asset.id} value={asset.id!}>{asset.name} ({asset.serial})</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="reason" className="text-right">Motivo</Label>
@@ -123,7 +189,7 @@ export default function EmpleadoPage() {
                 </div>
                  <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="picture" className="text-right">Imagen</Label>
-                  <Input id="picture" name="picture" type="file" className="col-span-3" />
+                  <Input id="picture" name="picture" type="file" className="col-span-3" onChange={handleFileChange} />
                 </div>
               </div>
               <DialogFooter>
@@ -133,17 +199,34 @@ export default function EmpleadoPage() {
           </DialogContent>
         </Dialog>
         
-        <Card className="cursor-pointer hover:border-destructive" onClick={() => alert('Función de devolución próximamente')}>
-          <CardHeader className="flex-row items-center gap-4">
-            <Undo2 className="h-8 w-8 text-destructive" />
-            <div>
-              <CardTitle>Devolución de Activos</CardTitle>
-              <CardDescription>
-                Inicie el proceso de devolución al salir de la empresa.
-              </CardDescription>
-            </div>
-          </CardHeader>
-        </Card>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+             <Card className="cursor-pointer hover:border-destructive">
+                <CardHeader className="flex-row items-center gap-4">
+                  <Undo2 className="h-8 w-8 text-destructive" />
+                  <div>
+                    <CardTitle>Devolución de Activos</CardTitle>
+                    <CardDescription>
+                      Inicie el proceso de devolución al salir de la empresa.
+                    </CardDescription>
+                  </div>
+                </CardHeader>
+              </Card>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle><AlertTriangle className="inline-block mr-2 text-destructive" />¿Está seguro?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta acción iniciará el proceso de devolución de TODOS sus activos asignados. 
+                Es un paso requerido para generar su paz y salvo. No podrá deshacer esta acción.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={() => alert('Función de devolución próximamente')}>Continuar</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <Card>
@@ -178,7 +261,7 @@ export default function EmpleadoPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     {asset.status === 'Recibido pendiente' && (
-                      <Button variant="outline" size="sm" className="gap-1" onClick={() => handleConfirmReceipt(asset.id)}>
+                      <Button variant="outline" size="sm" className="gap-1" onClick={() => handleConfirmReceipt(asset.id!)}>
                         <CheckCircle className="h-4 w-4" />
                         Confirmar Recibido
                       </Button>

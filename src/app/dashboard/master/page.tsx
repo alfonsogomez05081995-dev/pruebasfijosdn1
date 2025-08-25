@@ -31,21 +31,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
-
-
-const initialRequests = [
-  { id: 'REQ001', employee: 'Juan Perez', asset: 'Laptop Dell XPS', serial: 'SN12345', reason: 'Robo', date: '2024-05-10', status: 'Pendiente' },
-  { id: 'REQ002', employee: 'Maria Rodriguez', asset: 'Taladro percutor', serial: 'SN67890', reason: 'Desgaste', date: '2024-05-12', status: 'Pendiente' },
-  { id: 'REQ003', employee: 'Carlos Sanchez', asset: 'Monitor LG 27"', serial: 'SN54321', reason: 'Pérdida', date: '2024-05-13', status: 'Aprobado' },
-];
+import { getReplacementRequests, updateReplacementRequestStatus, sendAssignmentRequest, ReplacementRequest } from "@/lib/services";
 
 export default function MasterPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const [replacementRequests, setReplacementRequests] = useState(initialRequests);
+  const [replacementRequests, setReplacementRequests] = useState<ReplacementRequest[]>([]);
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -54,30 +48,51 @@ export default function MasterPage() {
     }
   }, [user, loading, router]);
 
-  const handleApprove = (id: string) => {
-    setReplacementRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'Aprobado' } : req));
-    toast({ title: "Solicitud Aprobada", description: `La solicitud ${id} ha sido aprobada.` });
+  useEffect(() => {
+    if (user) {
+      fetchRequests();
+    }
+  }, [user]);
+
+  const fetchRequests = async () => {
+    const requests = await getReplacementRequests();
+    setReplacementRequests(requests);
   };
 
-  const handleReject = (id: string) => {
-    setReplacementRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'Rechazado' } : req));
-     toast({ variant: "destructive", title: "Solicitud Rechazada", description: `La solicitud ${id} ha sido rechazada.` });
+  const handleApprove = async (id: string) => {
+    await updateReplacementRequestStatus(id, 'Aprobado');
+    toast({ title: "Solicitud Aprobada", description: `La solicitud ${id} ha sido aprobada.` });
+    fetchRequests();
+  };
+
+  const handleReject = async (id: string) => {
+    await updateReplacementRequestStatus(id, 'Rechazado');
+    toast({ variant: "destructive", title: "Solicitud Rechazada", description: `La solicitud ${id} ha sido rechazada.` });
+    fetchRequests();
   };
   
-  const handleAssignmentSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const employee = formData.get('employee');
-    const asset = formData.get('asset');
-    const quantity = formData.get('quantity');
+    const employee = formData.get('employee') as string;
+    const asset = formData.get('asset') as string;
+    const quantity = parseInt(formData.get('quantity') as string, 10);
 
-    // Aquí iría la lógica para enviar la solicitud
-    console.log({ employee, asset, quantity });
+    if (!employee || !asset || isNaN(quantity)) {
+      toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos." });
+      return;
+    }
 
-    toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantity} ${asset} para ${employee}.` });
-    setAssignmentDialogOpen(false);
+    try {
+      await sendAssignmentRequest({ employee, asset, quantity });
+      toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantity} ${asset} para ${employee}.` });
+      setAssignmentDialogOpen(false);
+      // Opcional: actualizar alguna lista si es necesario
+    } catch (error) {
+      console.error("Error enviando solicitud:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud." });
+    }
   };
-
 
   if (loading || !user) {
     return <div>Cargando...</div>;
@@ -164,11 +179,11 @@ export default function MasterPage() {
                   <TableCell className="text-right">
                     {request.status === 'Pendiente' && (
                       <div className="flex gap-2 justify-end">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApprove(request.id)}>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApprove(request.id!)}>
                           <Check className="h-4 w-4 text-green-500" />
                           <span className="sr-only">Aprobar</span>
                         </Button>
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReject(request.id)}>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReject(request.id!)}>
                           <X className="h-4 w-4 text-red-500" />
                           <span className="sr-only">Rechazar</span>
                         </Button>

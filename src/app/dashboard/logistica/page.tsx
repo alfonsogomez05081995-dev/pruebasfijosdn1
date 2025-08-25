@@ -22,46 +22,65 @@ import { Badge } from "@/components/ui/badge";
 import { PackagePlus, Send } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
-
-
-const initialRequests = [
-  { id: 'ASG001', employee: 'Juan Perez', asset: 'Laptop Dell XPS', quantity: 1, date: '2024-05-14', status: 'Pendiente' },
-  { id: 'ASG002', employee: 'Maria Rodriguez', asset: 'Taladro percutor', quantity: 1, date: '2024-05-14', status: 'Pendiente' },
-  { id: 'ASG003', employee: 'Pedro Gomez', asset: 'Silla de Oficina', quantity: 2, date: '2024-05-13', status: 'Enviado Parcial' },
-];
+import { addAsset, getAssignmentRequests, processAssignmentRequest, AssignmentRequest } from "@/lib/services";
 
 export default function LogisticaPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const [assignmentRequests, setAssignmentRequests] = useState(initialRequests);
+  const [assignmentRequests, setAssignmentRequests] = useState<AssignmentRequest[]>([]);
   
   useEffect(() => {
     if (!loading && (!user || !['Master', 'Logistica'].includes(user.role))) {
       router.push('/');
     }
   }, [user, loading, router]);
+
+  useEffect(() => {
+    if (user) {
+        fetchRequests();
+    }
+  }, [user]);
+
+  const fetchRequests = async () => {
+    const requests = await getAssignmentRequests();
+    setAssignmentRequests(requests);
+  };
   
-  const handleAddAsset = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAddAsset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const serial = formData.get('serial');
-    const description = formData.get('description');
+    const serial = formData.get('serial') as string;
+    const description = formData.get('description') as string;
+    const location = formData.get('location') as string;
     
-    // Lógica para agregar activo
-    console.log({ serial, description });
+    if (!description) {
+        toast({ variant: "destructive", title: "Error", description: "La descripción es requerida." });
+        return;
+    }
 
-    toast({ title: "Activo Agregado", description: `El activo ${description} ha sido agregado al inventario.` });
-    event.currentTarget.reset();
+    try {
+        await addAsset({ serial, description, location });
+        toast({ title: "Activo Agregado", description: `El activo ${description} ha sido agregado al inventario.` });
+        (event.target as HTMLFormElement).reset();
+    } catch (error) {
+        console.error("Error agregando activo:", error);
+        toast({ variant: "destructive", title: "Error", description: "No se pudo agregar el activo." });
+    }
   };
 
-  const handleProcessRequest = (id: string) => {
-    setAssignmentRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'Enviado' } : req));
-    toast({ title: "Solicitud Procesada", description: `La solicitud de asignación ${id} ha sido marcada como 'Enviado'.` });
+  const handleProcessRequest = async (id: string) => {
+    try {
+        await processAssignmentRequest(id);
+        toast({ title: "Solicitud Procesada", description: `La solicitud de asignación ${id} ha sido marcada como 'Enviado'.` });
+        fetchRequests();
+    } catch (error) {
+        console.error("Error procesando solicitud:", error);
+        toast({ variant: "destructive", title: "Error", description: "No se pudo procesar la solicitud." });
+    }
   };
-
 
   if (loading || !user) {
     return <div>Cargando...</div>;
@@ -133,7 +152,7 @@ export default function LogisticaPage() {
                     </TableCell>
                     <TableCell className="text-right">
                        {request.status === 'Pendiente' && (
-                         <Button variant="outline" size="sm" className="gap-1" onClick={() => handleProcessRequest(request.id)}>
+                         <Button variant="outline" size="sm" className="gap-1" onClick={() => handleProcessRequest(request.id!)}>
                           <Send className="h-4 w-4" />
                           Procesar
                         </Button>
