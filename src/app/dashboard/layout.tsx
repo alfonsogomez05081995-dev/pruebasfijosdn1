@@ -10,7 +10,7 @@ import {
   PanelLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { UserNav } from "@/components/user-nav";
 import { Logo } from "@/components/logo";
 import { useAuth } from "@/hooks/use-auth";
@@ -86,14 +86,18 @@ export default function DashboardLayout({
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="flex flex-col">
-              <nav className="grid gap-2 text-lg font-medium">
-                <Link
-                  href="#"
-                  className="flex items-center gap-2 text-lg font-semibold mb-4"
-                >
-                  <Logo className="h-8 w-8" />
-                  <span className="sr-only">FijosDN</span>
-                </Link>
+               <SheetHeader>
+                <SheetTitle>
+                   <Link
+                    href="#"
+                    className="flex items-center gap-2 text-lg font-semibold"
+                  >
+                    <Logo className="h-8 w-8" />
+                    <span>FijosDN</span>
+                  </Link>
+                </SheetTitle>
+              </SheetHeader>
+              <nav className="grid gap-2 text-lg font-medium mt-4">
                 {navItems.map((item) => (
                   <Link
                     key={item.label}
