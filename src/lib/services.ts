@@ -1,7 +1,5 @@
 
-import { db, storage } from './firebase';
-import { collection, addDoc, getDocs, doc, updateDoc, query, where, getDoc, runTransaction, DocumentData, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { DocumentData } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { User, Role } from '@/hooks/use-auth';
 
@@ -43,243 +41,236 @@ export interface ReplacementRequest {
   status: 'Pendiente' | 'Aprobado' | 'Rechazado';
 }
 
-const defaultUsers: User[] = [
+// --- In-Memory Mock Database ---
+
+let mockUsers: User[] = [
   { id: 'luisgm.ldv@gmail.com', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
   { id: 'logistica@empresa.com', name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
   { id: 'empleado@empresa.com', name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
 ];
 
+let mockAssets: Asset[] = [
+    { id: 'asset-1', name: 'Laptop Dell XPS 15', status: 'En stock', stock: 10, serial: 'DXPS15-STOCK', location: 'Bodega Central' },
+    { id: 'asset-2', name: 'Monitor LG 27"', status: 'En stock', stock: 5, serial: 'MLG27-STOCK', location: 'Bodega Central' },
+    { id: 'asset-3', name: 'Teclado Mecánico', status: 'Activo', employeeId: 'empleado@empresa.com', employeeName: 'Usuario Empleado', assignedDate: '2023-10-01', serial: 'TM-123' },
+    { id: 'asset-4', name: 'Mouse Logitech MX', status: 'Recibido pendiente', employeeId: 'empleado@empresa.com', employeeName: 'Usuario Empleado', assignedDate: '2023-10-26', serial: 'MLMX-456' },
+];
+
+let mockAssignmentRequests: AssignmentRequest[] = [
+    { id: 'req-1', assetId: 'asset-1', assetName: 'Laptop Dell XPS 15', employeeId: 'empleado@empresa.com', employeeName: 'Usuario Empleado', quantity: 1, status: 'Pendiente de Envío', date: '2023-10-25' }
+];
+
+let mockReplacementRequests: ReplacementRequest[] = [
+    { id: 'rep-req-1', employee: 'Usuario Empleado', employeeId: 'empleado@empresa.com', asset: 'Teclado Mecánico', assetId: 'asset-3', serial: 'TM-123', reason: 'Desgaste', justification: 'La tecla "A" no funciona bien.', status: 'Pendiente', date: '2023-10-26' }
+];
+
 
 // ------ User Management Services ------
 
-export const createUser = async (userData: Omit<User, 'id'>) => {
-  try {
-    const userRef = doc(db, 'users', userData.email);
-    const userSnap = await getDoc(userRef);
-
-    if (userSnap.exists()) {
-        throw new Error(`El correo '${userData.email}' ya está registrado.`);
-    }
-
-    await setDoc(userRef, userData);
-    console.log("User created successfully:", userData.email);
-    return { id: userRef.id, ...userData };
-  } catch (error) {
-    console.error("Error creating user:", error);
-    throw error;
-  }
+export const createUser = async (userData: Omit<User, 'id'>): Promise<User> => {
+  console.log("Mock createUser called with:", userData);
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      const existing = mockUsers.find(u => u.email === userData.email);
+      if (existing) {
+        reject(new Error(`El correo '${userData.email}' ya está registrado.`));
+        return;
+      }
+      const newUser: User = {
+        id: userData.email, // Using email as ID for simplicity
+        ...userData
+      };
+      mockUsers.push(newUser);
+      console.log("Current mockUsers:", mockUsers);
+      resolve(newUser);
+    }, 500);
+  });
 };
 
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
-    // This is a workaround to handle Firestore Rules blocking initial reads.
-    // It returns mock data so the UI can be tested.
-    console.warn("getUsers is returning mock data to avoid Firestore security rule issues in prototype.")
-    let users = defaultUsers;
-    if (roleFilter) {
-        return users.filter(user => user.role === roleFilter);
-    }
-    return users;
+    console.log("Mock getUsers called. Returning:", mockUsers);
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            if (roleFilter) {
+                resolve(mockUsers.filter(user => user.role === roleFilter));
+            } else {
+                resolve(mockUsers);
+            }
+        }, 300);
+    });
 }
 
 // ------ Master Services ------
-export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id' | 'date' | 'status'>) => {
-  try {
-    return await runTransaction(db, async (transaction) => {
-      const assetRef = doc(db, "assets", request.assetId);
-      const assetDoc = await transaction.get(assetRef);
+export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id' | 'date' | 'status'>): Promise<{ status: AssignmentRequest['status'], id: string }> => {
+    console.log("Mock sendAssignmentRequest called with:", request);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const assetToAssign = mockAssets.find(a => a.id === request.assetId && a.status === 'En stock');
+            if (!assetToAssign) {
+                return reject(new Error("Activo no encontrado o sin stock."));
+            }
+            const currentStock = assetToAssign.stock || 0;
+            const newStatus = currentStock >= request.quantity ? 'Pendiente de Envío' : 'Pendiente por Stock';
 
-      if (!assetDoc.exists()) {
-        throw new Error("El activo seleccionado ya no existe.");
-      }
-
-      const assetData = assetDoc.data() as Asset;
-      const currentStock = assetData.stock || 0;
-      
-      const newStatus = currentStock >= request.quantity ? 'Pendiente de Envío' : 'Pendiente por Stock';
-
-      if (newStatus === 'Pendiente de Envío') {
-        const newStock = currentStock - request.quantity;
-        
-        for (let i = 0; i < request.quantity; i++) {
-          const newAssignedAsset: Asset = {
-            name: assetData.name, 
-            serial: `${assetData.serial || 'SN'}-${Date.now()}-${i}`,
-            location: assetData.location,
-            status: 'Recibido pendiente',
-            assignedDate: new Date().toISOString().split('T')[0],
-            employeeId: request.employeeId,
-            employeeName: request.employeeName
-          };
-          const newAssetRef = doc(collection(db, 'assets'));
-          transaction.set(newAssetRef, newAssignedAsset);
-        }
-        
-        transaction.update(assetRef, { stock: newStock });
-      }
-
-      const newRequestData: Omit<AssignmentRequest, 'id'> = {
-        ...request,
-        date: new Date().toISOString().split('T')[0],
-        status: newStatus,
-      };
-      
-      const requestRef = doc(collection(db, 'assignmentRequests'));
-      transaction.set(requestRef, newRequestData);
-      
-      return { status: newStatus, ...newRequestData };
+            if (newStatus === 'Pendiente de Envío') {
+                assetToAssign.stock = currentStock - request.quantity;
+                for (let i = 0; i < request.quantity; i++) {
+                    const newAssignedAsset: Asset = {
+                        id: uuidv4(),
+                        name: assetToAssign.name,
+                        serial: `${assetToAssign.serial?.replace('-STOCK','') || 'SN'}-${Date.now()}-${i}`,
+                        location: assetToAssign.location,
+                        status: 'Recibido pendiente',
+                        assignedDate: new Date().toISOString().split('T')[0],
+                        employeeId: request.employeeId,
+                        employeeName: request.employeeName
+                    };
+                    mockAssets.push(newAssignedAsset);
+                }
+            }
+            
+            const newRequest: AssignmentRequest = {
+                ...request,
+                id: uuidv4(),
+                date: new Date().toISOString().split('T')[0],
+                status: newStatus,
+            };
+            mockAssignmentRequests.push(newRequest);
+            console.log("Current mockAssignmentRequests:", mockAssignmentRequests);
+            console.log("Current mockAssets:", mockAssets);
+            resolve({ status: newStatus, id: newRequest.id! });
+        }, 500);
     });
-  } catch (error) {
-    console.error("Error en la transacción de asignación:", error);
-    throw error;
-  }
 };
 
 
 export const getReplacementRequests = async (): Promise<ReplacementRequest[]> => {
-  try {
-    const q = query(collection(db, 'replacementRequests'));
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReplacementRequest));
-  } catch (error) {
-    console.error("Error fetching replacement requests:", error);
-    throw error;
-  }
+    console.log("Mock getReplacementRequests called.");
+    return new Promise((resolve) => setTimeout(() => resolve(mockReplacementRequests), 300));
 };
 
-export const updateReplacementRequestStatus = async (id: string, status: 'Aprobado' | 'Rechazado') => {
-  try {
-    const requestRef = doc(db, 'replacementRequests', id);
-    await updateDoc(requestRef, { status });
-  } catch (error) {
-    console.error("Error updating replacement request status:", error);
-    throw error;
-  }
+export const updateReplacementRequestStatus = async (id: string, status: 'Aprobado' | 'Rechazado'): Promise<void> => {
+    console.log(`Mock updateReplacementRequestStatus called for id: ${id} with status: ${status}`);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const requestIndex = mockReplacementRequests.findIndex(r => r.id === id);
+            if (requestIndex > -1) {
+                mockReplacementRequests[requestIndex].status = status;
+                resolve();
+            } else {
+                reject(new Error("Solicitud no encontrada."));
+            }
+        }, 500);
+    });
 };
 
 
 // ------ Logistica Services ------
-export const addAsset = async (asset: { serial?: string; name: string; location?: string; stock: number }) => {
-  try {
-    const assetsRef = collection(db, 'assets');
-    const q = query(assetsRef, where("name", "==", asset.name), where("status", "==", "En stock"));
-    const querySnapshot = await getDocs(q);
-
-    if (!querySnapshot.empty) {
-       const existingAssetDoc = querySnapshot.docs[0];
-       const existingAssetRef = doc(db, 'assets', existingAssetDoc.id);
-       const newStock = (existingAssetDoc.data().stock || 0) + asset.stock;
-       await updateDoc(existingAssetRef, { stock: newStock, location: asset.location, serial: asset.serial || existingAssetDoc.data().serial || '' });
-       return { id: existingAssetDoc.id, ...existingAssetDoc.data(), stock: newStock, location: asset.location };
-
-    } else {
-      const newAssetData: Omit<Asset, 'id' | 'assignedDate' | 'employeeId' | 'employeeName'> = {
-          name: asset.name,
-          serial: asset.serial || '',
-          location: asset.location || '',
-          stock: asset.stock || 0,
-          status: 'En stock',
-      };
-      const docRef = await addDoc(collection(db, 'assets'), newAssetData);
-      return { id: docRef.id, ...newAssetData };
-    }
-  } catch (error) {
-    console.error("Error adding asset:", error);
-    throw error;
-  }
+export const addAsset = async (asset: { serial?: string; name: string; location?: string; stock: number }): Promise<Asset> => {
+    console.log("Mock addAsset called with:", asset);
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            const existingAsset = mockAssets.find(a => a.name.toLowerCase() === asset.name.toLowerCase() && a.status === 'En stock');
+            if (existingAsset) {
+                existingAsset.stock = (existingAsset.stock || 0) + asset.stock;
+                existingAsset.location = asset.location || existingAsset.location;
+                console.log("Updated existing asset:", existingAsset);
+                resolve(existingAsset);
+            } else {
+                const newAsset: Asset = {
+                    id: uuidv4(),
+                    name: asset.name,
+                    serial: asset.serial || `SN-STOCK-${uuidv4().slice(0,4)}`,
+                    location: asset.location,
+                    stock: asset.stock,
+                    status: 'En stock',
+                };
+                mockAssets.push(newAsset);
+                console.log("Created new asset:", newAsset);
+                resolve(newAsset);
+            }
+            console.log("Current mockAssets:", mockAssets);
+        }, 500);
+    });
 };
 
 
 export const getStockAssets = async (): Promise<Asset[]> => {
-    try {
-        const q = query(collection(db, 'assets'), where('status', '==', 'En stock'), where('stock', '>', 0));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
-    } catch(error) {
-        console.error("Error fetching stock assets:", error);
-        throw new Error("No se pudieron cargar los activos en stock.");
-    }
+    console.log("Mock getStockAssets called.");
+    return new Promise((resolve) => setTimeout(() => {
+        resolve(mockAssets.filter(a => a.status === 'En stock' && (a.stock || 0) > 0));
+    }, 300));
 };
 
 export const getAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
-    try {
-        const q = query(collection(db, 'assignmentRequests'));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
-    } catch (error) {
-        console.error("Error fetching assignment requests:", error);
-        throw new Error("No se pudieron cargar las solicitudes de asignación.");
-    }
+    console.log("Mock getAssignmentRequests called.");
+    return new Promise((resolve) => setTimeout(() => resolve(mockAssignmentRequests), 300));
 };
 
-export const processAssignmentRequest = async (id: string) => {
-    try {
-        const requestRef = doc(db, 'assignmentRequests', id);
-        await updateDoc(requestRef, { status: 'Enviado' });
-    } catch(error) {
-        console.error("Error processing assignment request:", error);
-        throw new Error("No se pudo procesar la solicitud.");
-    }
+export const processAssignmentRequest = async (id: string): Promise<void> => {
+    console.log(`Mock processAssignmentRequest called for id: ${id}`);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const requestIndex = mockAssignmentRequests.findIndex(r => r.id === id);
+            if (requestIndex > -1) {
+                mockAssignmentRequests[requestIndex].status = 'Enviado';
+                resolve();
+            } else {
+                reject(new Error("Solicitud no encontrada."));
+            }
+        }, 500);
+    });
 };
 
 
 // ------ Empleado Services ------
 
 export const getMyAssignedAssets = async (employeeId: string): Promise<Asset[]> => {
-    try {
-        const q = query(collection(db, 'assets'), where('employeeId', '==', employeeId));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
-    } catch (error) {
-        console.error("Error fetching assigned assets:", error);
-        throw new Error("No se pudieron cargar los activos asignados.");
-    }
+    console.log(`Mock getMyAssignedAssets called for employeeId: ${employeeId}`);
+    return new Promise((resolve) => setTimeout(() => {
+        resolve(mockAssets.filter(a => a.employeeId === employeeId));
+    }, 300));
 };
 
-export const confirmAssetReceipt = async (id: string) => {
-    try {
-        const assetRef = doc(db, 'assets', id);
-        await updateDoc(assetRef, { status: 'Activo' });
-    } catch (error) {
-        console.error("Error confirming asset receipt:", error);
-        throw new Error("Could not confirm asset receipt.");
-    }
+export const confirmAssetReceipt = async (id: string): Promise<void> => {
+    console.log(`Mock confirmAssetReceipt called for id: ${id}`);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const assetIndex = mockAssets.findIndex(a => a.id === id);
+            if (assetIndex > -1) {
+                mockAssets[assetIndex].status = 'Activo';
+                resolve();
+            } else {
+                reject(new Error("Activo no encontrado."));
+            }
+        }, 500);
+    });
 };
 
-export const submitReplacementRequest = async (requestData: Omit<ReplacementRequest, 'id' | 'date' | 'status' | 'imageUrl'> & { imageFile?: File }) => {
-    try {
-        let imageUrl = '';
-        if (requestData.imageFile) {
-            const imageRef = ref(storage, `justifications/${uuidv4()}`);
-            const snapshot = await uploadBytes(imageRef, requestData.imageFile);
-            imageUrl = await getDownloadURL(snapshot.ref);
-        }
-
-        const newRequest: Omit<ReplacementRequest, 'id'> = {
-            ...requestData,
-            imageUrl,
-            date: new Date().toISOString().split('T')[0],
-            status: 'Pendiente',
-        };
-        const docRef = await addDoc(collection(db, 'replacementRequests'), newRequest);
-        return { id: docRef.id, ...newRequest };
-    } catch (error) {
-        console.error("Error submitting replacement request:", error);
-        throw new Error("No se pudo enviar la solicitud de reposición.");
-    }
+export const submitReplacementRequest = async (requestData: Omit<ReplacementRequest, 'id' | 'date' | 'status' | 'imageUrl'> & { imageFile?: File }): Promise<ReplacementRequest> => {
+    console.log("Mock submitReplacementRequest called with:", requestData);
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            const newRequest: ReplacementRequest = {
+                ...requestData,
+                id: uuidv4(),
+                imageUrl: requestData.imageFile ? URL.createObjectURL(requestData.imageFile) : undefined,
+                date: new Date().toISOString().split('T')[0],
+                status: 'Pendiente',
+            };
+            mockReplacementRequests.push(newRequest);
+            console.log("Current mockReplacementRequests:", mockReplacementRequests);
+            resolve(newRequest);
+        }, 500);
+    });
 };
 
 export const getAssetById = async (id: string): Promise<Asset | null> => {
-    try {
-        const assetRef = doc(db, 'assets', id);
-        const assetSnap = await getDoc(assetRef);
-        if (assetSnap.exists()) {
-            return { id: assetSnap.id, ...assetSnap.data() } as Asset;
-        } else {
-            console.warn(`Asset with id ${id} not found.`);
-            return null;
-        }
-    } catch (error) {
-        console.error(`Error fetching asset by id ${id}:`, error);
-        throw new Error("No se pudieron obtener los detalles del activo.");
-    }
+    console.log(`Mock getAssetById called for id: ${id}`);
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            const asset = mockAssets.find(a => a.id === id);
+            resolve(asset || null);
+        }, 300);
+    });
 };
