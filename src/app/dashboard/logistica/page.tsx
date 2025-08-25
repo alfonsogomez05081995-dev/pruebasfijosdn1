@@ -55,14 +55,15 @@ export default function LogisticaPage() {
     const serial = formData.get('serial') as string;
     const description = formData.get('description') as string;
     const location = formData.get('location') as string;
+    const stock = parseInt(formData.get('stock') as string, 10);
     
-    if (!description) {
-        toast({ variant: "destructive", title: "Error", description: "La descripción es requerida." });
+    if (!description || isNaN(stock)) {
+        toast({ variant: "destructive", title: "Error", description: "La descripción y el stock son requeridos." });
         return;
     }
 
     try {
-        await addAsset({ serial, description, location });
+        await addAsset({ serial, description, location, stock });
         toast({ title: "Activo Agregado", description: `El activo ${description} ha sido agregado al inventario.` });
         (event.target as HTMLFormElement).reset();
     } catch (error) {
@@ -74,7 +75,7 @@ export default function LogisticaPage() {
   const handleProcessRequest = async (id: string) => {
     try {
         await processAssignmentRequest(id);
-        toast({ title: "Solicitud Procesada", description: `La solicitud de asignación ${id} ha sido marcada como 'Enviado'.` });
+        toast({ title: "Solicitud Procesada", description: `La solicitud de asignación ha sido marcada como 'Enviado'.` });
         fetchRequests();
     } catch (error) {
         console.error("Error procesando solicitud:", error);
@@ -102,12 +103,16 @@ export default function LogisticaPage() {
           <CardContent>
             <form onSubmit={handleAddAsset} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="serial">Serial (Obligatorio para equipos eléctricos)</Label>
+                <Label htmlFor="serial">Serial (Opcional)</Label>
                 <Input id="serial" name="serial" placeholder="SN12345ABC" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Descripción</Label>
                 <Input id="description" name="description" placeholder="Laptop Dell XPS 15" required/>
+              </div>
+               <div className="space-y-2">
+                <Label htmlFor="stock">Cantidad (Stock)</Label>
+                <Input id="stock" name="stock" type="number" placeholder="10" required/>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="location">Ubicación</Label>
@@ -142,16 +147,16 @@ export default function LogisticaPage() {
               <TableBody>
                 {assignmentRequests.map((request) => (
                   <TableRow key={request.id}>
-                    <TableCell>{request.employee}</TableCell>
-                    <TableCell>{request.asset}</TableCell>
+                    <TableCell>{request.employeeName}</TableCell>
+                    <TableCell>{request.assetName}</TableCell>
                     <TableCell>{request.quantity}</TableCell>
                     <TableCell>
-                      <Badge variant={request.status === 'Pendiente' ? 'destructive' : 'secondary'}>
+                      <Badge variant={request.status === 'Pendiente de Envío' ? 'default' : request.status === 'Pendiente por Stock' ? 'destructive' : 'secondary'}>
                         {request.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                       {request.status === 'Pendiente' && (
+                       {request.status === 'Pendiente de Envío' && (
                          <Button variant="outline" size="sm" className="gap-1" onClick={() => handleProcessRequest(request.id!)}>
                           <Send className="h-4 w-4" />
                           Procesar
@@ -168,3 +173,5 @@ export default function LogisticaPage() {
     </>
   );
 }
+
+    

@@ -4,9 +4,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 
-type Role = 'Master' | 'Logistica' | 'Empleado';
+export type Role = 'Master' | 'Logistica' | 'Empleado';
 
-interface User {
+export interface User {
   id: string;
   name: string;
   email: string;
@@ -21,7 +21,7 @@ interface AuthContextType {
 }
 
 const mockUsers: User[] = [
-  { id: '1', name: 'Luis G.', email: 'luisgm.ldv@gmail.com', role: 'Master' },
+  { id: '1', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
   { id: '2', name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
   { id: '3', name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
 ];
@@ -76,3 +76,5 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
+    
