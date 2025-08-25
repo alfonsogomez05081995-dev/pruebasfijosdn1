@@ -51,7 +51,8 @@ export default function LogisticaPage() {
   
   const handleAddAsset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const serial = formData.get('serial') as string;
     const description = formData.get('description') as string;
     const location = formData.get('location') as string;
@@ -65,7 +66,7 @@ export default function LogisticaPage() {
     try {
         await addAsset({ serial, description, location, stock });
         toast({ title: "Activo Agregado", description: `El activo ${description} ha sido agregado al inventario.` });
-        (event.target as HTMLFormElement).reset();
+        form.reset();
     } catch (error) {
         console.error("Error agregando activo:", error);
         toast({ variant: "destructive", title: "Error", description: "No se pudo agregar el activo." });
@@ -173,5 +174,3 @@ export default function LogisticaPage() {
     </>
   );
 }
-
-    

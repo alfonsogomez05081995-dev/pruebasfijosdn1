@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth, User } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { getReplacementRequests, updateReplacementRequestStatus, sendAssignmentRequest, ReplacementRequest, getStockAssets, Asset, getUsers } from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -54,25 +54,25 @@ export default function MasterPage() {
     }
   }, [user, loading, router]);
 
+  const fetchRequests = useCallback(async () => {
+    const requests = await getReplacementRequests();
+    setReplacementRequests(requests);
+  }, []);
+
+  const fetchFormData = useCallback(async () => {
+    const fetchedEmployees = await getUsers('Empleado');
+    const fetchedAssets = await getStockAssets();
+    setEmployees(fetchedEmployees);
+    setStockAssets(fetchedAssets);
+  }, []);
+
   useEffect(() => {
     if (user) {
       fetchRequests();
       fetchFormData();
     }
-  }, [user]);
+  }, [user, fetchRequests, fetchFormData]);
   
-  const fetchFormData = async () => {
-    const fetchedEmployees = await getUsers('Empleado');
-    const fetchedAssets = await getStockAssets();
-    setEmployees(fetchedEmployees);
-    setStockAssets(fetchedAssets);
-  };
-
-  const fetchRequests = async () => {
-    const requests = await getReplacementRequests();
-    setReplacementRequests(requests);
-  };
-
   const handleApprove = async (id: string) => {
     try {
       await updateReplacementRequestStatus(id, 'Aprobado');
@@ -126,7 +126,7 @@ export default function MasterPage() {
           description: `No hay suficiente stock para ${asset.name}. La solicitud se creó como 'Pendiente por Stock'.`,
         });
       } else {
-        toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantity} ${asset.name} para ${employee.name}.` });
+        toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantity} de ${asset.name} para ${employee.name}.` });
       }
 
       setAssignmentDialogOpen(false);
@@ -262,5 +262,3 @@ export default function MasterPage() {
     </>
   );
 }
-
-    
