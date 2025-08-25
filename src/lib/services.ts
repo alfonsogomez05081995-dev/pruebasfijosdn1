@@ -43,6 +43,35 @@ export interface ReplacementRequest {
   status: 'Pendiente' | 'Aprobado' | 'Rechazado';
 }
 
+const defaultUsers: Omit<User, 'id'>[] = [
+  { name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
+  { name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
+  { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
+];
+
+export const initializeDefaultUsers = async () => {
+    try {
+        const usersRef = collection(db, "users");
+        const querySnapshot = await getDocs(query(usersRef, where("email", "in", defaultUsers.map(u => u.email))));
+        
+        const existingEmails = new Set(querySnapshot.docs.map(doc => doc.data().email));
+        const usersToCreate = defaultUsers.filter(user => !existingEmails.has(user.email));
+
+        if (usersToCreate.length > 0) {
+            const batch = writeBatch(db);
+            usersToCreate.forEach(user => {
+                const newUserRef = doc(db, 'users', user.email);
+                batch.set(newUserRef, user);
+            });
+            await batch.commit();
+            console.log(`${usersToCreate.length} default user(s) created.`);
+        }
+    } catch (error) {
+        console.error("Fatal error initializing default users. This likely means your Firestore security rules are blocking write access.", error);
+        throw new Error("No se pudieron inicializar los usuarios. Verifique las reglas de Firestore.");
+    }
+};
+
 
 // ------ User Management Services ------
 
@@ -66,6 +95,7 @@ export const createUser = async (userData: Omit<User, 'id'>) => {
 
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
     try {
+        await initializeDefaultUsers(); // Ensure default users exist
         const usersRef = collection(db, 'users');
         let q;
 
@@ -286,5 +316,3 @@ export const getAssetById = async (id: string): Promise<Asset | null> => {
         throw new Error("No se pudieron obtener los detalles del activo.");
     }
 };
-
-    
