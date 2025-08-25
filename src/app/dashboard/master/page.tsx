@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Check, X } from "lucide-react";
+import { PlusCircle, Check, X, UserPlus } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -33,7 +33,7 @@ import { useAuth, User } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getReplacementRequests, updateReplacementRequestStatus, sendAssignmentRequest, ReplacementRequest, getStockAssets, Asset, getUsers } from "@/lib/services";
+import { getReplacementRequests, updateReplacementRequestStatus, sendAssignmentRequest, ReplacementRequest, getStockAssets, Asset, getUsers, createUser } from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 
@@ -43,7 +43,9 @@ export default function MasterPage() {
   const { toast } = useToast();
   const [replacementRequests, setReplacementRequests] = useState<ReplacementRequest[]>([]);
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [employees, setEmployees] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [selectedAsset, setSelectedAsset] = useState('');
@@ -54,30 +56,28 @@ export default function MasterPage() {
     }
   }, [user, loading, router]);
 
-  const fetchRequests = useCallback(async () => {
+  const fetchAllData = useCallback(async () => {
     const requests = await getReplacementRequests();
     setReplacementRequests(requests);
-  }, []);
-
-  const fetchFormData = useCallback(async () => {
     const fetchedEmployees = await getUsers('Empleado');
     const fetchedAssets = await getStockAssets();
+    const allSystemUsers = await getUsers();
     setEmployees(fetchedEmployees);
     setStockAssets(fetchedAssets);
+    setAllUsers(allSystemUsers);
   }, []);
 
   useEffect(() => {
     if (user) {
-      fetchRequests();
-      fetchFormData();
+      fetchAllData();
     }
-  }, [user, fetchRequests, fetchFormData]);
+  }, [user, fetchAllData]);
   
   const handleApprove = async (id: string) => {
     try {
       await updateReplacementRequestStatus(id, 'Aprobado');
       toast({ title: "Solicitud Aprobada", description: `La solicitud ${id} ha sido aprobada.` });
-      fetchRequests();
+      fetchAllData();
     } catch(error) {
        console.error("Error al aprobar:", error);
        toast({ variant: "destructive", title: "Error", description: "No se pudo aprobar la solicitud." });
@@ -88,7 +88,7 @@ export default function MasterPage() {
     try {
       await updateReplacementRequestStatus(id, 'Rechazado');
       toast({ variant: "destructive", title: "Solicitud Rechazada", description: `La solicitud ${id} ha sido rechazada.` });
-      fetchRequests();
+      fetchAllData();
     } catch (error) {
        console.error("Error al rechazar:", error);
        toast({ variant: "destructive", title: "Error", description: "No se pudo rechazar la solicitud." });
@@ -132,10 +132,34 @@ export default function MasterPage() {
       setAssignmentDialogOpen(false);
       setSelectedAsset('');
       setSelectedEmployee('');
-      fetchFormData(); // Refresh stock assets
+      fetchAllData(); // Refresh stock assets
     } catch (error) {
       console.error("Error enviando solicitud:", error);
       toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud." });
+    }
+  };
+
+  const handleUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const name = formData.get('name') as string;
+    const email = formData.get('email') as string;
+    const role = formData.get('role') as 'Master' | 'Logistica' | 'Empleado';
+
+    if (!name || !email || !role) {
+      toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos." });
+      return;
+    }
+
+    try {
+      // Password is not handled in this mock auth system
+      await createUser({ name, email, role });
+      toast({ title: "Usuario Creado", description: `El usuario ${name} ha sido creado.` });
+      setUserDialogOpen(false);
+      fetchAllData();
+    } catch (error) {
+      console.error("Error creando usuario:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo crear el usuario." });
     }
   };
 
@@ -145,7 +169,7 @@ export default function MasterPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold md:text-2xl">Panel del Master</h1>
         <Dialog open={assignmentDialogOpen} onOpenChange={setAssignmentDialogOpen}>
           <DialogTrigger asChild>
@@ -201,64 +225,144 @@ export default function MasterPage() {
           </DialogContent>
         </Dialog>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Autorizar Reposición de Activos</CardTitle>
-          <CardDescription>
-            Revise y apruebe o rechace las solicitudes de reposición de activos.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Empleado</TableHead>
-                <TableHead>Activo</TableHead>
-                <TableHead>Motivo</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {replacementRequests.map((request) => (
-                <TableRow key={request.id}>
-                  <TableCell>{request.employee}</TableCell>
-                  <TableCell>
-                    <div className="font-medium">{request.asset}</div>
-                    <div className="text-sm text-muted-foreground">{request.serial}</div>
-                  </TableCell>
-                  <TableCell>{request.reason}</TableCell>
-                  <TableCell>{request.date}</TableCell>
-                  <TableCell>
-                     <Badge variant={
-                        request.status === 'Pendiente' ? 'secondary' :
-                        request.status === 'Aprobado' ? 'default' :
-                        'destructive'
-                      }>
-                        {request.status}
-                      </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {request.status === 'Pendiente' && (
-                      <div className="flex gap-2 justify-end">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApprove(request.id!)}>
-                          <Check className="h-4 w-4 text-green-500" />
-                          <span className="sr-only">Aprobar</span>
-                        </Button>
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReject(request.id!)}>
-                          <X className="h-4 w-4 text-red-500" />
-                          <span className="sr-only">Rechazar</span>
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Autorizar Reposición de Activos</CardTitle>
+            <CardDescription>
+              Revise y apruebe o rechace las solicitudes de reposición.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Empleado</TableHead>
+                  <TableHead>Activo</TableHead>
+                  <TableHead>Motivo</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {replacementRequests.map((request) => (
+                  <TableRow key={request.id}>
+                    <TableCell>{request.employee}</TableCell>
+                    <TableCell>
+                      <div className="font-medium">{request.asset}</div>
+                      <div className="text-sm text-muted-foreground">{request.serial}</div>
+                    </TableCell>
+                    <TableCell>{request.reason}</TableCell>
+                    <TableCell>
+                      <Badge variant={
+                          request.status === 'Pendiente' ? 'secondary' :
+                          request.status === 'Aprobado' ? 'default' :
+                          'destructive'
+                        }>
+                          {request.status}
+                        </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {request.status === 'Pendiente' && (
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApprove(request.id!)}>
+                            <Check className="h-4 w-4 text-green-500" />
+                            <span className="sr-only">Aprobar</span>
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReject(request.id!)}>
+                            <X className="h-4 w-4 text-red-500" />
+                            <span className="sr-only">Rechazar</span>
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Gestión de Empleados</CardTitle>
+                <CardDescription>
+                  Cree y administre los usuarios del sistema.
+                </CardDescription>
+              </div>
+               <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="gap-1">
+                    <UserPlus className="h-4 w-4" />
+                    Crear Usuario
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <form onSubmit={handleUserSubmit}>
+                    <DialogHeader>
+                      <DialogTitle>Crear Nuevo Usuario</DialogTitle>
+                      <DialogDescription>
+                        Complete los datos para registrar un nuevo empleado en el sistema.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="name" className="text-right">Nombre</Label>
+                        <Input id="name" name="name" className="col-span-3" required />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="email" className="text-right">Correo</Label>
+                        <Input id="email" name="email" type="email" className="col-span-3" required />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="role" className="text-right">Rol</Label>
+                        <Select name="role" required>
+                          <SelectTrigger className="col-span-3">
+                            <SelectValue placeholder="Seleccione un rol" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Empleado">Empleado</SelectItem>
+                            <SelectItem value="Logistica">Logística</SelectItem>
+                            <SelectItem value="Master">Master</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit">Crear Usuario</Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+          </CardHeader>
+          <CardContent>
+            <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Correo</TableHead>
+                    <TableHead>Rol</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allUsers.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell>{u.name}</TableCell>
+                      <TableCell>{u.email}</TableCell>
+                      <TableCell>
+                        <Badge variant={u.role === 'Master' ? 'default' : 'secondary'}>{u.role}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }
+
+    

@@ -1,6 +1,6 @@
 
 import { db, storage } from './firebase';
-import { collection, addDoc, getDocs, doc, updateDoc, query, where, getDoc, runTransaction, DocumentData } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, updateDoc, query, where, getDoc, runTransaction, DocumentData, serverTimestamp, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
 import { User } from '@/hooks/use-auth';
@@ -9,7 +9,7 @@ import { User } from '@/hooks/use-auth';
 export interface Asset extends DocumentData {
   id?: string;
   name: string;
-  serial: string;
+  serial?: string;
   location?: string;
   assignedDate?: string;
   status: 'Activo' | 'Recibido pendiente' | 'En devolución' | 'En stock' | 'Baja';
@@ -43,29 +43,33 @@ export interface ReplacementRequest {
   status: 'Pendiente' | 'Aprobado' | 'Rechazado';
 }
 
-// ------ Generic Services ------
-export const getUsers = async (roleFilter?: 'Master' | 'Logistica' | 'Empleado'): Promise<User[]> => {
-    // This is a mock implementation. In a real app, you'd query a 'users' collection.
-    const mockUsers: User[] = [
-        { id: '1', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
-        { id: '2', name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
-        { id: '3', name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
-    ];
-    if (roleFilter) {
-      return mockUsers.filter(u => u.role === roleFilter);
-    }
-    return mockUsers;
-}
-
-export const getAssetById = async (id: string): Promise<Asset | null> => {
-    const assetRef = doc(db, 'assets', id);
-    const assetSnap = await getDoc(assetRef);
-    if (assetSnap.exists()) {
-        return { id: assetSnap.id, ...assetSnap.data() } as Asset;
-    } else {
-        return null;
-    }
+// ------ User Management Services ------
+export const createUser = async (userData: Omit<User, 'id'>) => {
+  // Use email as a document ID to prevent duplicates
+  const userRef = doc(db, 'users', userData.email);
+  await setDoc(userRef, userData);
+  return { id: userRef.id, ...userData };
 };
+
+export const getUsers = async (roleFilter?: 'Master' | 'Logistica' | 'Empleado'): Promise<User[]> => {
+    const usersRef = collection(db, 'users');
+    let q = query(usersRef);
+
+    if (roleFilter) {
+      q = query(usersRef, where('role', '==', roleFilter));
+    }
+
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) {
+      // If no users, return the mock Master user so the app can still be accessed
+      if (roleFilter === 'Master' || !roleFilter) {
+        return [{ id: '1', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' }];
+      }
+      return [];
+    }
+
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+}
 
 // ------ Master Services ------
 export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id' | 'date' | 'status'>) => {
@@ -89,9 +93,8 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
       status: newStatus,
     };
     
-    // This is a simplified request creation. A real implementation would also adjust stock here.
-    const docRef = collection(db, 'assignmentRequests');
-    await addDoc(docRef, newRequest);
+    const docRef = doc(collection(db, 'assignmentRequests'));
+    transaction.set(docRef, newRequest);
     
     return { status: newStatus, ...newRequest };
   });
@@ -112,15 +115,15 @@ export const updateReplacementRequestStatus = async (id: string, status: 'Aproba
 
 // ------ Logistica Services ------
 export const addAsset = async (asset: { serial: string; name: string; location: string; stock: number }) => {
-  const newAsset: Omit<Asset, 'id'> = {
+  const newAssetData: Omit<Asset, 'id'> = {
     name: asset.name,
     serial: asset.serial || '',
     location: asset.location || '',
     stock: asset.stock || 0,
-    status: 'En stock', 
+    status: 'En stock',
   };
-  const docRef = await addDoc(collection(db, 'assets'), newAsset);
-  return { id: docRef.id, ...newAsset };
+  const docRef = await addDoc(collection(db, 'assets'), newAssetData);
+  return { id: docRef.id, ...newAssetData };
 };
 
 export const getStockAssets = async (): Promise<Asset[]> => {
@@ -173,3 +176,16 @@ export const submitReplacementRequest = async (requestData: Omit<ReplacementRequ
     const docRef = await addDoc(collection(db, 'replacementRequests'), newRequest);
     return { id: docRef.id, ...newRequest };
 };
+
+export const getAssetById = async (id: string): Promise<Asset | null> => {
+    const assetRef = doc(db, 'assets', id);
+    const assetSnap = await getDoc(assetRef);
+    if (assetSnap.exists()) {
+        return { id: assetSnap.id, ...assetSnap.data() } as Asset;
+    } else {
+        return null;
+    }
+};
+
+
+    

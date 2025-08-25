@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { PackagePlus, Send } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { addAsset, getAssignmentRequests, processAssignmentRequest, AssignmentRequest } from "@/lib/services";
 
@@ -38,16 +38,17 @@ export default function LogisticaPage() {
     }
   }, [user, loading, router]);
 
+  const fetchRequests = useCallback(async () => {
+    const requests = await getAssignmentRequests();
+    setAssignmentRequests(requests);
+  }, []);
+
   useEffect(() => {
     if (user) {
         fetchRequests();
     }
-  }, [user]);
+  }, [user, fetchRequests]);
 
-  const fetchRequests = async () => {
-    const requests = await getAssignmentRequests();
-    setAssignmentRequests(requests);
-  };
   
   const handleAddAsset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -174,3 +175,6 @@ export default function LogisticaPage() {
     </>
   );
 }
+
+
+    
