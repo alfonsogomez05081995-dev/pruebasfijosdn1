@@ -52,22 +52,26 @@ const initializeDefaultUsers = async () => {
     const q = query(usersRef, where('email', 'in', ['luisgm.ldv@gmail.com', 'logistica@empresa.com', 'empleado@empresa.com']));
     const snapshot = await getDocs(q);
 
-    if (snapshot.docs.length < 3) {
+    const existingEmails = snapshot.docs.map(doc => doc.data().email);
+    const mockUsers: Omit<User, 'id'>[] = [
+        { name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
+        { name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
+        { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
+    ];
+    
+    const usersToCreate = mockUsers.filter(user => !existingEmails.includes(user.email));
+
+    if (usersToCreate.length > 0) {
         console.log("Default users missing. Initializing...");
         const batch = writeBatch(db);
-        const mockUsers: Omit<User, 'id'>[] = [
-            { name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
-            { name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
-            { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
-        ];
-
-        mockUsers.forEach(user => {
+        
+        usersToCreate.forEach(user => {
             const userDocRef = doc(db, 'users', user.email); // Use email as ID
-            batch.set(userDocRef, user, { merge: true }); // Use merge to avoid overwriting if user exists
+            batch.set(userDocRef, user);
         });
 
         await batch.commit();
-        console.log("Default users initialized/verified.");
+        console.log("Default users initialized.");
     }
 };
 
@@ -128,24 +132,26 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
       
       const newStatus = currentStock >= request.quantity ? 'Pendiente de Envío' : 'Pendiente por Stock';
 
+      // We only create the new asset and decrement stock if it's available
       if (newStatus === 'Pendiente de Envío') {
-         // Create a new assigned asset for the employee
-        const newAssignedAsset: Asset = {
-          ...assetData,
-          stock: undefined, // Individual assets don't have stock
-          status: 'Recibido pendiente',
-          assignedDate: new Date().toISOString().split('T')[0],
-          employeeId: request.employeeId,
-          employeeName: request.employeeName
-        };
-        delete newAssignedAsset.id; // Firestore will generate a new ID
+        const newStock = currentStock - request.quantity;
         
-        // This creates a completely new document for the assigned asset
-        const newAssetRef = doc(collection(db, 'assets'));
-        transaction.set(newAssetRef, newAssignedAsset);
+        // Create N new assigned assets for the employee
+        for (let i = 0; i < request.quantity; i++) {
+          const newAssignedAsset: Asset = {
+            name: assetData.name, // The generic name
+            serial: assetData.serial, // The main serial, or could be individualized later
+            location: assetData.location,
+            status: 'Recibido pendiente',
+            assignedDate: new Date().toISOString().split('T')[0],
+            employeeId: request.employeeId,
+            employeeName: request.employeeName
+          };
+          const newAssetRef = doc(collection(db, 'assets'));
+          transaction.set(newAssetRef, newAssignedAsset);
+        }
         
         // Decrement stock from the main inventory asset
-        const newStock = currentStock - request.quantity;
         transaction.update(assetRef, { stock: newStock });
       }
 
