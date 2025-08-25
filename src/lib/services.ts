@@ -71,8 +71,8 @@ export const createUser = async (userData: Omit<User, 'id'>) => {
 };
 
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
-    // NOTE: This is a mock implementation to avoid Firestore Rules errors during prototyping.
-    // In a real application, this would query the 'users' collection.
+    // This is a workaround to handle Firestore Rules blocking initial reads.
+    // It returns mock data so the UI can be tested.
     console.warn("getUsers is returning mock data to avoid Firestore security rule issues in prototype.")
     let users = defaultUsers;
     if (roleFilter) {
@@ -283,5 +283,3 @@ export const getAssetById = async (id: string): Promise<Asset | null> => {
         throw new Error("No se pudieron obtener los detalles del activo.");
     }
 };
-
-    

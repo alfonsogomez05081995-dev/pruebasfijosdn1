@@ -84,9 +84,8 @@ export default function LogisticaPage() {
         setAssetSerial('');
         setAssetLocation('');
         setAssetStock('');
-        // We don't need to manually refetch, master view will do it.
-        // Or in a more complex app, we would use a shared state manager.
-
+        // In a real app, we might need to trigger a refetch of data on other components.
+        // For this app, master view will refetch on its own interval/triggers.
     } catch (error: any) {
         console.error("Error agregando activo:", error);
         toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo agregar el activo." });
