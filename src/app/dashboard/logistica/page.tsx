@@ -22,9 +22,11 @@ import { Badge } from "@/components/ui/badge";
 import { PackagePlus, Send } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
-const assignmentRequests = [
+
+const initialRequests = [
   { id: 'ASG001', employee: 'Juan Perez', asset: 'Laptop Dell XPS', quantity: 1, date: '2024-05-14', status: 'Pendiente' },
   { id: 'ASG002', employee: 'Maria Rodriguez', asset: 'Taladro percutor', quantity: 1, date: '2024-05-14', status: 'Pendiente' },
   { id: 'ASG003', employee: 'Pedro Gomez', asset: 'Silla de Oficina', quantity: 2, date: '2024-05-13', status: 'Enviado Parcial' },
@@ -33,12 +35,33 @@ const assignmentRequests = [
 export default function LogisticaPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-
+  const { toast } = useToast();
+  const [assignmentRequests, setAssignmentRequests] = useState(initialRequests);
+  
   useEffect(() => {
     if (!loading && (!user || !['Master', 'Logistica'].includes(user.role))) {
       router.push('/');
     }
   }, [user, loading, router]);
+  
+  const handleAddAsset = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const serial = formData.get('serial');
+    const description = formData.get('description');
+    
+    // Lógica para agregar activo
+    console.log({ serial, description });
+
+    toast({ title: "Activo Agregado", description: `El activo ${description} ha sido agregado al inventario.` });
+    event.currentTarget.reset();
+  };
+
+  const handleProcessRequest = (id: string) => {
+    setAssignmentRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'Enviado' } : req));
+    toast({ title: "Solicitud Procesada", description: `La solicitud de asignación ${id} ha sido marcada como 'Enviado'.` });
+  };
+
 
   if (loading || !user) {
     return <div>Cargando...</div>;
@@ -57,23 +80,25 @@ export default function LogisticaPage() {
               Registre nuevos activos en el inventario.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="serial">Serial (Obligatorio para equipos eléctricos)</Label>
-              <Input id="serial" placeholder="SN12345ABC" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Descripción</Label>
-              <Input id="description" placeholder="Laptop Dell XPS 15" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="location">Ubicación</Label>
-              <Input id="location" placeholder="Bodega Central, Estante A-3" />
-            </div>
-            <Button className="w-full">
-              <PackagePlus className="mr-2 h-4 w-4" />
-              Agregar Activo
-            </Button>
+          <CardContent>
+            <form onSubmit={handleAddAsset} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="serial">Serial (Obligatorio para equipos eléctricos)</Label>
+                <Input id="serial" name="serial" placeholder="SN12345ABC" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Descripción</Label>
+                <Input id="description" name="description" placeholder="Laptop Dell XPS 15" required/>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="location">Ubicación</Label>
+                <Input id="location" name="location" placeholder="Bodega Central, Estante A-3" />
+              </div>
+              <Button type="submit" className="w-full">
+                <PackagePlus className="mr-2 h-4 w-4" />
+                Agregar Activo
+              </Button>
+            </form>
           </CardContent>
         </Card>
 
@@ -108,7 +133,7 @@ export default function LogisticaPage() {
                     </TableCell>
                     <TableCell className="text-right">
                        {request.status === 'Pendiente' && (
-                         <Button variant="outline" size="sm" className="gap-1">
+                         <Button variant="outline" size="sm" className="gap-1" onClick={() => handleProcessRequest(request.id)}>
                           <Send className="h-4 w-4" />
                           Procesar
                         </Button>

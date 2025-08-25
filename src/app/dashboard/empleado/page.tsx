@@ -32,9 +32,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
-const assignedAssets = [
+
+const initialAssets = [
   { id: 'ASSET0123', name: 'Laptop Dell XPS', serial: 'SN12345', assignedDate: '2023-10-15', status: 'Activo' },
   { id: 'ASSET0456', name: 'Monitor LG 27"', serial: 'SN54321', assignedDate: '2023-10-15', status: 'Activo' },
   { id: 'ASSET0789', name: 'Taladro percutor', serial: 'SN67890', assignedDate: '2024-05-15', status: 'Recibido pendiente' },
@@ -44,12 +46,34 @@ const assignedAssets = [
 export default function EmpleadoPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
+  const [assignedAssets, setAssignedAssets] = useState(initialAssets);
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'Empleado')) {
       router.push('/');
     }
   }, [user, loading, router]);
+  
+  const handleConfirmReceipt = (id: string) => {
+    setAssignedAssets(prev => prev.map(asset => asset.id === id ? { ...asset, status: 'Activo' } : asset));
+    toast({ title: "Recepción Confirmada", description: "El estado del activo ha sido actualizado a 'Activo'." });
+  };
+  
+  const handleRequestSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const asset = formData.get('asset');
+    const reason = formData.get('reason');
+    
+    // Lógica para enviar la solicitud
+    console.log({ asset, reason });
+
+    toast({ title: "Solicitud Enviada", description: `Su solicitud de reposición para ${asset} ha sido enviada.` });
+    setRequestDialogOpen(false);
+  };
+
 
   if (loading || !user) {
     return <div>Cargando...</div>;
@@ -62,7 +86,7 @@ export default function EmpleadoPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Dialog>
+        <Dialog open={requestDialogOpen} onOpenChange={setRequestDialogOpen}>
           <DialogTrigger asChild>
             <Card className="cursor-pointer hover:border-primary">
               <CardHeader className="flex-row items-center gap-4">
@@ -77,37 +101,39 @@ export default function EmpleadoPage() {
             </Card>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Solicitar Reposición de Activo</DialogTitle>
-              <DialogDescription>
-                Complete los detalles de su solicitud. Adjunte una imagen como justificativo.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="asset" className="text-right">Activo</Label>
-                <Input id="asset" placeholder="Ej: Laptop SN12345" className="col-span-3" />
+            <form onSubmit={handleRequestSubmit}>
+              <DialogHeader>
+                <DialogTitle>Solicitar Reposición de Activo</DialogTitle>
+                <DialogDescription>
+                  Complete los detalles de su solicitud. Adjunte una imagen como justificativo.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                 <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="asset" className="text-right">Activo</Label>
+                  <Input id="asset" name="asset" placeholder="Ej: Laptop SN12345" className="col-span-3" required/>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="reason" className="text-right">Motivo</Label>
+                  <Input id="reason" name="reason" placeholder="Pérdida, robo, desgaste..." className="col-span-3" required/>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="justification" className="text-right">Justificación</Label>
+                  <Textarea id="justification" name="justification" placeholder="Describa lo sucedido" className="col-span-3" required/>
+                </div>
+                 <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="picture" className="text-right">Imagen</Label>
+                  <Input id="picture" name="picture" type="file" className="col-span-3" />
+                </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="reason" className="text-right">Motivo</Label>
-                <Input id="reason" placeholder="Pérdida, robo, desgaste..." className="col-span-3" />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="justification" className="text-right">Justificación</Label>
-                <Textarea id="justification" placeholder="Describa lo sucedido" className="col-span-3" />
-              </div>
-               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="picture" className="text-right">Imagen</Label>
-                <Input id="picture" type="file" className="col-span-3" />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="submit">Enviar Solicitud</Button>
-            </DialogFooter>
+              <DialogFooter>
+                <Button type="submit">Enviar Solicitud</Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
         
-        <Card>
+        <Card className="cursor-pointer hover:border-destructive" onClick={() => alert('Función de devolución próximamente')}>
           <CardHeader className="flex-row items-center gap-4">
             <Undo2 className="h-8 w-8 text-destructive" />
             <div>
@@ -152,7 +178,7 @@ export default function EmpleadoPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     {asset.status === 'Recibido pendiente' && (
-                      <Button variant="outline" size="sm" className="gap-1">
+                      <Button variant="outline" size="sm" className="gap-1" onClick={() => handleConfirmReceipt(asset.id)}>
                         <CheckCircle className="h-4 w-4" />
                         Confirmar Recibido
                       </Button>
