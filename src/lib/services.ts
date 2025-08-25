@@ -44,14 +44,17 @@ export interface ReplacementRequest {
 }
 
 // ------ Generic Services ------
-export const getUsers = async (role: 'Master' | 'Logistica' | 'Empleado'): Promise<User[]> => {
+export const getUsers = async (roleFilter?: 'Master' | 'Logistica' | 'Empleado'): Promise<User[]> => {
     // This is a mock implementation. In a real app, you'd query a 'users' collection.
     const mockUsers: User[] = [
-        { id: '1', name: 'Luis G.', email: 'luisgm.ldv@gmail.com', role: 'Master' },
+        { id: '1', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
         { id: '2', name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
         { id: '3', name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
     ];
-    return mockUsers.filter(u => u.role === role);
+    if (roleFilter) {
+      return mockUsers.filter(u => u.role === roleFilter);
+    }
+    return mockUsers;
 }
 
 export const getAssetById = async (id: string): Promise<Asset | null> => {
@@ -85,10 +88,12 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
       date: new Date().toISOString().split('T')[0],
       status: newStatus,
     };
-
-    const docRef = await addDoc(collection(db, 'assignmentRequests'), newRequest);
     
-    return { id: docRef.id, ...newRequest };
+    // This is a simplified request creation. A real implementation would also adjust stock here.
+    const docRef = collection(db, 'assignmentRequests');
+    await addDoc(docRef, newRequest);
+    
+    return { status: newStatus, ...newRequest };
   });
 };
 
@@ -106,9 +111,9 @@ export const updateReplacementRequestStatus = async (id: string, status: 'Aproba
 
 
 // ------ Logistica Services ------
-export const addAsset = async (asset: { serial: string; description: string; location: string; stock: number }) => {
+export const addAsset = async (asset: { serial: string; name: string; location: string; stock: number }) => {
   const newAsset = {
-    name: asset.description,
+    name: asset.name,
     serial: asset.serial,
     location: asset.location,
     stock: asset.stock,
@@ -168,5 +173,3 @@ export const submitReplacementRequest = async (requestData: Omit<ReplacementRequ
     const docRef = await addDoc(collection(db, 'replacementRequests'), newRequest);
     return { id: docRef.id, ...newRequest };
 };
-
-    

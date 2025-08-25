@@ -54,18 +54,18 @@ export default function LogisticaPage() {
     const form = event.currentTarget;
     const formData = new FormData(form);
     const serial = formData.get('serial') as string;
-    const description = formData.get('description') as string;
+    const name = formData.get('name') as string;
     const location = formData.get('location') as string;
     const stock = parseInt(formData.get('stock') as string, 10);
     
-    if (!description || isNaN(stock)) {
-        toast({ variant: "destructive", title: "Error", description: "La descripción y el stock son requeridos." });
+    if (!name || isNaN(stock)) {
+        toast({ variant: "destructive", title: "Error", description: "El nombre y el stock son requeridos." });
         return;
     }
 
     try {
-        await addAsset({ serial, description, location, stock });
-        toast({ title: "Activo Agregado", description: `El activo ${description} ha sido agregado al inventario.` });
+        await addAsset({ serial, name, location, stock });
+        toast({ title: "Activo Agregado", description: `El activo ${name} ha sido agregado al inventario.` });
         form.reset();
     } catch (error) {
         console.error("Error agregando activo:", error);
@@ -108,8 +108,8 @@ export default function LogisticaPage() {
                 <Input id="serial" name="serial" placeholder="SN12345ABC" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="description">Descripción</Label>
-                <Input id="description" name="description" placeholder="Laptop Dell XPS 15" required/>
+                <Label htmlFor="name">Nombre / Descripción</Label>
+                <Input id="name" name="name" placeholder="Laptop Dell XPS 15" required/>
               </div>
                <div className="space-y-2">
                 <Label htmlFor="stock">Cantidad (Stock)</Label>
