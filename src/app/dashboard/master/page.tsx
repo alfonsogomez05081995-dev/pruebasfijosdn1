@@ -167,9 +167,10 @@ export default function MasterPage() {
       await fetchAllData();
     } catch (error) {
       console.error("Error creando usuario:", error);
-      toast({ variant: "destructive", title: "Error", description: `No se pudo crear el usuario. Es posible que el correo '${email}' ya exista.` });
+      toast({ variant: "destructive", title: "Error al crear usuario", description: `No se pudo crear el usuario. Es posible que el correo '${email}' ya exista.` });
     }
   };
+
 
   if (loading || !user) {
     return <div>Cargando...</div>;
@@ -372,3 +373,6 @@ export default function MasterPage() {
     </>
   );
 }
+
+
+    
