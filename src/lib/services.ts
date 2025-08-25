@@ -49,29 +49,34 @@ export interface ReplacementRequest {
 // This function will create the initial set of users if they don't exist.
 const initializeDefaultUsers = async () => {
     const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('email', 'in', ['luisgm.ldv@gmail.com', 'logistica@empresa.com', 'empleado@empresa.com']));
-    const snapshot = await getDocs(q);
-
-    const existingEmails = snapshot.docs.map(doc => doc.data().email);
-    const mockUsers: Omit<User, 'id'>[] = [
+    const defaultUsers: Omit<User, 'id'>[] = [
         { name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
         { name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
         { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
     ];
     
-    const usersToCreate = mockUsers.filter(user => !existingEmails.includes(user.email));
-
-    if (usersToCreate.length > 0) {
-        console.log("Default users missing. Initializing...");
-        const batch = writeBatch(db);
+    try {
+        const q = query(usersRef, where('email', 'in', defaultUsers.map(u => u.email)));
+        const snapshot = await getDocs(q);
+        const existingEmails = snapshot.docs.map(doc => doc.data().email);
         
-        usersToCreate.forEach(user => {
-            const userDocRef = doc(db, 'users', user.email); // Use email as ID
-            batch.set(userDocRef, user);
-        });
+        const usersToCreate = defaultUsers.filter(user => !existingEmails.includes(user.email));
 
-        await batch.commit();
-        console.log("Default users initialized.");
+        if (usersToCreate.length > 0) {
+            console.log("Default users missing. Initializing...");
+            const batch = writeBatch(db);
+            
+            usersToCreate.forEach(user => {
+                const userDocRef = doc(db, 'users', user.email); // Use email as ID
+                batch.set(userDocRef, user);
+            });
+
+            await batch.commit();
+            console.log("Default users initialized successfully.");
+        }
+    } catch (error) {
+        console.error("CRITICAL: Failed to initialize default users. This is likely a Firestore Rules issue.", error);
+        console.error("Please ensure your Firestore rules allow writes to the 'users' collection for authenticated users.");
     }
 };
 
@@ -94,9 +99,10 @@ export const createUser = async (userData: Omit<User, 'id'>) => {
 };
 
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
+    // First, ensure default users are there.
+    await initializeDefaultUsers();
+
     try {
-        await initializeDefaultUsers();
-        
         const usersRef = collection(db, 'users');
         let q;
 
@@ -109,10 +115,14 @@ export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
         const querySnapshot = await getDocs(q);
         const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
         
+        if (users.length === 0 && roleFilter) {
+            console.warn(`No users found for role: ${roleFilter}. The initial user check might have failed.`);
+        }
+        
         return users;
     } catch(error) {
-        console.error("Error fetching users. This might be a Firestore Rules issue.", error);
-        throw new Error("No se pudieron cargar los usuarios. Verifique las reglas de Firestore.");
+        console.error("FATAL: Could not fetch users. This is a strong indicator of a Firestore Rules issue.", error);
+        throw new Error("No se pudieron cargar los usuarios. Por favor, revise las reglas de seguridad de Firestore en su consola de Firebase.");
     }
 }
 
@@ -176,7 +186,7 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
 
 export const getReplacementRequests = async (): Promise<ReplacementRequest[]> => {
   try {
-    const q = query(collection(db, 'replacementRequests'), where('status', '==', 'Pendiente'));
+    const q = query(collection(db, 'replacementRequests'));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReplacementRequest));
   } catch (error) {
@@ -327,3 +337,5 @@ export const getAssetById = async (id: string): Promise<Asset | null> => {
         throw new Error("No se pudieron obtener los detalles del activo.");
     }
 };
+
+    

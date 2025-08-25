@@ -81,9 +81,9 @@ export default function MasterPage() {
       setEmployees(fetchedEmployees);
       setStockAssets(fetchedAssets);
       setAllUsers(allSystemUsers);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error fetching data:", error);
-        toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos. Verifique las reglas de Firestore.' });
+        toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudieron cargar los datos.' });
     }
   }, [toast]);
 
@@ -262,7 +262,7 @@ export default function MasterPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {replacementRequests.map((request) => (
+                {replacementRequests.filter(req => req.status === 'Pendiente').map((request) => (
                   <TableRow key={request.id}>
                     <TableCell>{request.employee}</TableCell>
                     <TableCell>
@@ -380,3 +380,5 @@ export default function MasterPage() {
     </>
   );
 }
+
+    
