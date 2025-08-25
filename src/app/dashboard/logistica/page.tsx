@@ -39,9 +39,14 @@ export default function LogisticaPage() {
   }, [user, loading, router]);
 
   const fetchRequests = useCallback(async () => {
-    const requests = await getAssignmentRequests();
-    setAssignmentRequests(requests);
-  }, []);
+    try {
+        const requests = await getAssignmentRequests();
+        setAssignmentRequests(requests);
+    } catch (error) {
+        console.error("Error fetching requests:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar las solicitudes.' });
+    }
+  }, [toast]);
 
   useEffect(() => {
     if (user) {
@@ -77,8 +82,8 @@ export default function LogisticaPage() {
   const handleProcessRequest = async (id: string) => {
     try {
         await processAssignmentRequest(id);
-        toast({ title: "Solicitud Procesada", description: `La solicitud de asignación ha sido marcada como 'Enviado'.` });
-        fetchRequests();
+        toast({ title: "Solicitud Procesada", description: `La solicitud ha sido marcada como 'Enviado'.` });
+        await fetchRequests();
     } catch (error) {
         console.error("Error procesando solicitud:", error);
         toast({ variant: "destructive", title: "Error", description: "No se pudo procesar la solicitud." });
@@ -175,6 +180,3 @@ export default function LogisticaPage() {
     </>
   );
 }
-
-
-    

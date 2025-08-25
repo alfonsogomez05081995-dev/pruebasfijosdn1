@@ -57,15 +57,20 @@ export default function MasterPage() {
   }, [user, loading, router]);
 
   const fetchAllData = useCallback(async () => {
-    const requests = await getReplacementRequests();
-    setReplacementRequests(requests);
-    const fetchedEmployees = await getUsers('Empleado');
-    const fetchedAssets = await getStockAssets();
-    const allSystemUsers = await getUsers();
-    setEmployees(fetchedEmployees);
-    setStockAssets(fetchedAssets);
-    setAllUsers(allSystemUsers);
-  }, []);
+    try {
+      const requests = await getReplacementRequests();
+      setReplacementRequests(requests);
+      const fetchedEmployees = await getUsers('Empleado');
+      const fetchedAssets = await getStockAssets();
+      const allSystemUsers = await getUsers();
+      setEmployees(fetchedEmployees);
+      setStockAssets(fetchedAssets);
+      setAllUsers(allSystemUsers);
+    } catch (error) {
+        console.error("Error fetching data:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos.' });
+    }
+  }, [toast]);
 
   useEffect(() => {
     if (user) {
@@ -76,8 +81,8 @@ export default function MasterPage() {
   const handleApprove = async (id: string) => {
     try {
       await updateReplacementRequestStatus(id, 'Aprobado');
-      toast({ title: "Solicitud Aprobada", description: `La solicitud ${id} ha sido aprobada.` });
-      fetchAllData();
+      toast({ title: "Solicitud Aprobada", description: `La solicitud ha sido aprobada.` });
+      await fetchAllData();
     } catch(error) {
        console.error("Error al aprobar:", error);
        toast({ variant: "destructive", title: "Error", description: "No se pudo aprobar la solicitud." });
@@ -87,8 +92,8 @@ export default function MasterPage() {
   const handleReject = async (id: string) => {
     try {
       await updateReplacementRequestStatus(id, 'Rechazado');
-      toast({ variant: "destructive", title: "Solicitud Rechazada", description: `La solicitud ${id} ha sido rechazada.` });
-      fetchAllData();
+      toast({ variant: "destructive", title: "Solicitud Rechazada", description: `La solicitud ha sido rechazada.` });
+      await fetchAllData();
     } catch (error) {
        console.error("Error al rechazar:", error);
        toast({ variant: "destructive", title: "Error", description: "No se pudo rechazar la solicitud." });
@@ -132,7 +137,7 @@ export default function MasterPage() {
       setAssignmentDialogOpen(false);
       setSelectedAsset('');
       setSelectedEmployee('');
-      fetchAllData(); // Refresh stock assets
+      await fetchAllData(); 
     } catch (error) {
       console.error("Error enviando solicitud:", error);
       toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud." });
@@ -141,7 +146,8 @@ export default function MasterPage() {
 
   const handleUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const name = formData.get('name') as string;
     const email = formData.get('email') as string;
     const role = formData.get('role') as 'Master' | 'Logistica' | 'Empleado';
@@ -152,14 +158,14 @@ export default function MasterPage() {
     }
 
     try {
-      // Password is not handled in this mock auth system
       await createUser({ name, email, role });
       toast({ title: "Usuario Creado", description: `El usuario ${name} ha sido creado.` });
       setUserDialogOpen(false);
-      fetchAllData();
+      form.reset();
+      await fetchAllData();
     } catch (error) {
       console.error("Error creando usuario:", error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudo crear el usuario." });
+      toast({ variant: "destructive", title: "Error", description: `No se pudo crear el usuario. Es posible que el correo '${email}' ya exista.` });
     }
   };
 
@@ -364,5 +370,3 @@ export default function MasterPage() {
     </>
   );
 }
-
-    

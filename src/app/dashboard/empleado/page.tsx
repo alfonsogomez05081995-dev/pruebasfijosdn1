@@ -32,7 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, FormEvent, ChangeEvent } from "react";
+import { useEffect, useState, FormEvent, ChangeEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { getMyAssignedAssets, confirmAssetReceipt, submitReplacementRequest, Asset, getAssetById } from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -63,24 +63,29 @@ export default function EmpleadoPage() {
     }
   }, [user, loading, router]);
 
+  const fetchAssets = useCallback(async () => {
+    if (user?.id) {
+        try {
+            const assets = await getMyAssignedAssets(user.id);
+            setAssignedAssets(assets);
+        } catch(error) {
+            console.error("Error fetching assets:", error);
+            toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar sus activos.' });
+        }
+    }
+  }, [user, toast]);
+
   useEffect(() => {
     if (user) {
       fetchAssets();
     }
-  }, [user]);
-
-  const fetchAssets = async () => {
-    if (user?.id) {
-      const assets = await getMyAssignedAssets(user.id);
-      setAssignedAssets(assets);
-    }
-  };
+  }, [user, fetchAssets]);
 
   const handleConfirmReceipt = async (id: string) => {
     try {
       await confirmAssetReceipt(id);
       toast({ title: "Recepción Confirmada", description: "El estado del activo ha sido actualizado a 'Activo'." });
-      fetchAssets();
+      await fetchAssets();
     } catch (error) {
       console.error("Error confirmando recepción:", error);
       toast({ variant: "destructive", title: "Error", description: "No se pudo confirmar la recepción." });
@@ -89,7 +94,8 @@ export default function EmpleadoPage() {
   
   const handleRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const reason = formData.get('reason') as string;
     const justification = formData.get('justification') as string;
     
@@ -98,28 +104,29 @@ export default function EmpleadoPage() {
       return;
     }
 
-    const asset = await getAssetById(selectedAssetId);
-    if (!asset) {
-        toast({ variant: "destructive", title: "Error", description: "Activo no encontrado." });
-        return;
-    }
-
     try {
-      await submitReplacementRequest({
-        employee: user.name,
-        employeeId: user.id,
-        asset: asset.name,
-        assetId: selectedAssetId,
-        serial: asset.serial,
-        reason,
-        justification,
-        imageFile,
-      });
-      toast({ title: "Solicitud Enviada", description: `Su solicitud de reposición para ${asset.name} ha sido enviada.` });
-      setRequestDialogOpen(false);
-      // Reset form state
-      setSelectedAssetId('');
-      setImageFile(undefined);
+        const asset = await getAssetById(selectedAssetId);
+        if (!asset) {
+            toast({ variant: "destructive", title: "Error", description: "Activo no encontrado." });
+            return;
+        }
+
+        await submitReplacementRequest({
+            employee: user.name,
+            employeeId: user.id,
+            asset: asset.name,
+            assetId: selectedAssetId,
+            serial: asset.serial,
+            reason,
+            justification,
+            imageFile,
+        });
+        toast({ title: "Solicitud Enviada", description: `Su solicitud de reposición para ${asset.name} ha sido enviada.` });
+        setRequestDialogOpen(false);
+        // Reset form state
+        form.reset();
+        setSelectedAssetId('');
+        setImageFile(undefined);
     } catch(error) {
         console.error("Error enviando solicitud:", error);
         toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud." });
@@ -127,8 +134,10 @@ export default function EmpleadoPage() {
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
+    if (e.target.files && e.target.files[0]) {
       setImageFile(e.target.files[0]);
+    } else {
+      setImageFile(undefined);
     }
   };
 
@@ -168,7 +177,7 @@ export default function EmpleadoPage() {
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="asset" className="text-right">Activo</Label>
-                    <Select onValueChange={setSelectedAssetId} required>
+                    <Select onValueChange={setSelectedAssetId} value={selectedAssetId} required>
                         <SelectTrigger className="col-span-3">
                             <SelectValue placeholder="Seleccione un activo" />
                         </SelectTrigger>
@@ -223,7 +232,7 @@ export default function EmpleadoPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={() => alert('Función de devolución próximamente')}>Continuar</AlertDialogAction>
+              <AlertDialogAction onClick={() => toast({ title: 'Próximamente', description: 'La función de devolución de activos estará disponible pronto.' })}>Continuar</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
