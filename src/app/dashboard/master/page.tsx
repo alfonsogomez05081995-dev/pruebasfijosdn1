@@ -83,7 +83,7 @@ export default function MasterPage() {
       setAllUsers(allSystemUsers);
     } catch (error) {
         console.error("Error fetching data:", error);
-        toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos.' });
+        toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos. Verifique las reglas de Firestore.' });
     }
   }, [toast]);
 
@@ -172,9 +172,9 @@ export default function MasterPage() {
       setNewUserEmail('');
       setNewUserRole('');
       await fetchAllData();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creando usuario:", error);
-      toast({ variant: "destructive", title: "Error al crear usuario", description: `${error}` });
+      toast({ variant: "destructive", title: "Error al crear usuario", description: error.message || "Un error desconocido ocurrió." });
     }
   };
 
@@ -380,3 +380,5 @@ export default function MasterPage() {
     </>
   );
 }
+
+    

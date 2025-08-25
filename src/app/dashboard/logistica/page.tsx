@@ -84,6 +84,8 @@ export default function LogisticaPage() {
         setAssetSerial('');
         setAssetLocation('');
         setAssetStock('');
+        // We don't need to manually refetch, master view will do it.
+        // Or in a more complex app, we would use a shared state manager.
 
     } catch (error) {
         console.error("Error agregando activo:", error);
@@ -192,3 +194,5 @@ export default function LogisticaPage() {
     </>
   );
 }
+
+    
