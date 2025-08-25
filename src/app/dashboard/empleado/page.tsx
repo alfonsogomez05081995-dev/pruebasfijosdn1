@@ -51,7 +51,7 @@ export default function EmpleadoPage() {
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (!loading && (!user || user.role !== 'Empleado')) {
+    if (!loading && (!user || !['Master', 'Empleado'].includes(user.role))) {
       router.push('/');
     }
   }, [user, loading, router]);
