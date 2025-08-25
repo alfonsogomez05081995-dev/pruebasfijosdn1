@@ -49,28 +49,23 @@ const defaultUsers: Omit<User, 'id'>[] = [
   { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
 ];
 
-// This function should be called by an authenticated user (e.g., Master during first user creation)
-// to ensure it doesn't fail due to Firestore rules.
 export const initializeDefaultUsers = async () => {
     try {
         const usersRef = collection(db, "users");
-        const querySnapshot = await getDocs(query(usersRef, where("email", "in", defaultUsers.map(u => u.email))));
-        
-        const existingEmails = new Set(querySnapshot.docs.map(doc => doc.data().email));
-        const usersToCreate = defaultUsers.filter(user => !existingEmails.has(user.email));
+        const snapshot = await getDocs(query(usersRef));
 
-        if (usersToCreate.length > 0) {
+        if (snapshot.empty) {
+            console.log("No users found. Initializing default users...");
             const batch = writeBatch(db);
-            usersToCreate.forEach(user => {
+            defaultUsers.forEach(user => {
                 const newUserRef = doc(db, 'users', user.email);
                 batch.set(newUserRef, user);
             });
             await batch.commit();
-            console.log(`${usersToCreate.length} default user(s) created.`);
+            console.log(`${defaultUsers.length} default user(s) created.`);
         }
     } catch (error) {
-        console.error("Error initializing default users. This may indicate a Firestore Rules issue if the current user is not authenticated.", error);
-        // We don't re-throw here to avoid breaking the calling function if initialization is just a "nice-to-have"
+        console.error("Error initializing default users:", error);
     }
 };
 
@@ -79,9 +74,6 @@ export const initializeDefaultUsers = async () => {
 
 export const createUser = async (userData: Omit<User, 'id'>) => {
   try {
-    // Ensure default users are there when a master creates the first user
-    await initializeDefaultUsers(); 
-    
     const userRef = doc(db, 'users', userData.email);
     const userSnap = await getDoc(userRef);
 
@@ -100,6 +92,8 @@ export const createUser = async (userData: Omit<User, 'id'>) => {
 
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
     try {
+        await initializeDefaultUsers();
+        
         const usersRef = collection(db, 'users');
         let q;
 
@@ -140,7 +134,7 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
         for (let i = 0; i < request.quantity; i++) {
           const newAssignedAsset: Asset = {
             name: assetData.name, 
-            serial: assetData.serial, 
+            serial: `${assetData.serial || 'SN'}-${Date.now()}-${i}`,
             location: assetData.location,
             status: 'Recibido pendiente',
             assignedDate: new Date().toISOString().split('T')[0],
@@ -320,5 +314,3 @@ export const getAssetById = async (id: string): Promise<Asset | null> => {
         throw new Error("No se pudieron obtener los detalles del activo.");
     }
 };
-
-    
