@@ -47,6 +47,12 @@ export interface ReplacementRequest {
 export const createUser = async (userData: Omit<User, 'id'>) => {
   // Use email as a document ID to prevent duplicates
   const userRef = doc(db, 'users', userData.email);
+  const userSnap = await getDoc(userRef);
+
+  if (userSnap.exists()) {
+    throw new Error(`El correo '${userData.email}' ya está registrado.`);
+  }
+
   await setDoc(userRef, userData);
   return { id: userRef.id, ...userData };
 };
@@ -60,15 +66,16 @@ export const getUsers = async (roleFilter?: 'Master' | 'Logistica' | 'Empleado')
     }
 
     const querySnapshot = await getDocs(q);
-    if (querySnapshot.empty) {
-      // If no users, return the mock Master user so the app can still be accessed
-      if (roleFilter === 'Master' || !roleFilter) {
-        return [{ id: '1', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' }];
-      }
-      return [];
+
+    const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    
+    // Always ensure the default Master user is present if the collection is empty or doesn't contain it
+    const masterUserExists = users.some(u => u.email === 'luisgm.ldv@gmail.com');
+    if (!masterUserExists) {
+        users.push({ id: 'luisgm.ldv@gmail.com', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' });
     }
 
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    return users;
 }
 
 // ------ Master Services ------
@@ -114,7 +121,7 @@ export const updateReplacementRequestStatus = async (id: string, status: 'Aproba
 
 
 // ------ Logistica Services ------
-export const addAsset = async (asset: { serial: string; name: string; location: string; stock: number }) => {
+export const addAsset = async (asset: { serial?: string; name: string; location?: string; stock: number }) => {
   const newAssetData: Omit<Asset, 'id'> = {
     name: asset.name,
     serial: asset.serial || '',
@@ -186,6 +193,3 @@ export const getAssetById = async (id: string): Promise<Asset | null> => {
         return null;
     }
 };
-
-
-    

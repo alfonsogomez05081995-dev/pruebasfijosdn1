@@ -373,6 +373,3 @@ export default function MasterPage() {
     </>
   );
 }
-
-
-    

@@ -64,8 +64,8 @@ export default function LogisticaPage() {
     const location = formData.get('location') as string;
     const stock = parseInt(formData.get('stock') as string, 10);
     
-    if (!name || isNaN(stock)) {
-        toast({ variant: "destructive", title: "Error", description: "El nombre y el stock son requeridos." });
+    if (!name || isNaN(stock) || stock <= 0) {
+        toast({ variant: "destructive", title: "Error de Validación", description: "El nombre y una cantidad de stock válida son requeridos." });
         return;
     }
 
@@ -73,6 +73,7 @@ export default function LogisticaPage() {
         await addAsset({ serial, name, location, stock });
         toast({ title: "Activo Agregado", description: `El activo ${name} ha sido agregado al inventario.` });
         form.reset();
+        // Maybe refresh some data here if needed
     } catch (error) {
         console.error("Error agregando activo:", error);
         toast({ variant: "destructive", title: "Error", description: "No se pudo agregar el activo." });
@@ -119,7 +120,7 @@ export default function LogisticaPage() {
               </div>
                <div className="space-y-2">
                 <Label htmlFor="stock">Cantidad (Stock)</Label>
-                <Input id="stock" name="stock" type="number" placeholder="10" required/>
+                <Input id="stock" name="stock" type="number" placeholder="10" required min="1" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="location">Ubicación</Label>
