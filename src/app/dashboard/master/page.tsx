@@ -41,15 +41,27 @@ export default function MasterPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  
+  // Data state
   const [replacementRequests, setReplacementRequests] = useState<ReplacementRequest[]>([]);
-  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
-  const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [employees, setEmployees] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
+  
+  // Dialog state
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+
+  // Assignment form state
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [selectedAsset, setSelectedAsset] = useState('');
-  const [selectedRole, setSelectedRole] = useState<Role | ''>('');
+  const [quantity, setQuantity] = useState('1');
+
+  // User form state
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserRole, setNewUserRole] = useState<Role | ''>('');
+
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'Master')) {
@@ -59,11 +71,13 @@ export default function MasterPage() {
 
   const fetchAllData = useCallback(async () => {
     try {
-      const requests = await getReplacementRequests();
+      const [requests, fetchedEmployees, fetchedAssets, allSystemUsers] = await Promise.all([
+        getReplacementRequests(),
+        getUsers('Empleado'),
+        getStockAssets(),
+        getUsers()
+      ]);
       setReplacementRequests(requests);
-      const fetchedEmployees = await getUsers('Empleado');
-      const fetchedAssets = await getStockAssets();
-      const allSystemUsers = await getUsers();
       setEmployees(fetchedEmployees);
       setStockAssets(fetchedAssets);
       setAllUsers(allSystemUsers);
@@ -103,16 +117,12 @@ export default function MasterPage() {
   
   const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const employeeId = selectedEmployee;
-    const assetId = selectedAsset;
-    const quantity = parseInt(formData.get('quantity') as string, 10);
-    
-    const employee = employees.find(e => e.id === employeeId);
-    const asset = stockAssets.find(a => a.id === assetId);
+    const quantityNumber = parseInt(quantity, 10);
+    const employee = employees.find(e => e.id === selectedEmployee);
+    const asset = stockAssets.find(a => a.id === selectedAsset);
 
-    if (!employee || !asset || isNaN(quantity)) {
-      toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos." });
+    if (!employee || !asset || isNaN(quantityNumber) || quantityNumber <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos y la cantidad debe ser válida." });
       return;
     }
 
@@ -122,7 +132,7 @@ export default function MasterPage() {
         employeeName: employee.name, 
         assetId: asset.id!,
         assetName: asset.name, 
-        quantity 
+        quantity: quantityNumber
       });
 
       if (result.status === 'Pendiente por Stock') {
@@ -132,12 +142,13 @@ export default function MasterPage() {
           description: `No hay suficiente stock para ${asset.name}. La solicitud se creó como 'Pendiente por Stock'.`,
         });
       } else {
-        toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantity} de ${asset.name} para ${employee.name}.` });
+        toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantityNumber} de ${asset.name} para ${employee.name}.` });
       }
 
       setAssignmentDialogOpen(false);
       setSelectedAsset('');
       setSelectedEmployee('');
+      setQuantity('1');
       await fetchAllData(); 
     } catch (error) {
       console.error("Error enviando solicitud:", error);
@@ -147,27 +158,23 @@ export default function MasterPage() {
 
   const handleUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const name = formData.get('name') as string;
-    const email = formData.get('email') as string;
-    const role = selectedRole;
 
-    if (!name || !email || !role) {
+    if (!newUserName || !newUserEmail || !newUserRole) {
       toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos." });
       return;
     }
 
     try {
-      await createUser({ name, email, role });
-      toast({ title: "Usuario Creado", description: `El usuario ${name} ha sido creado.` });
+      await createUser({ name: newUserName, email: newUserEmail, role: newUserRole });
+      toast({ title: "Usuario Creado", description: `El usuario ${newUserName} ha sido creado.` });
       setUserDialogOpen(false);
-      form.reset();
-      setSelectedRole('');
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserRole('');
       await fetchAllData();
     } catch (error) {
       console.error("Error creando usuario:", error);
-      toast({ variant: "destructive", title: "Error al crear usuario", description: `No se pudo crear el usuario. Es posible que el correo '${email}' ya exista.` });
+      toast({ variant: "destructive", title: "Error al crear usuario", description: `${error}` });
     }
   };
 
@@ -224,7 +231,7 @@ export default function MasterPage() {
                 </div>
                  <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="quantity" className="text-right">Cantidad</Label>
-                  <Input id="quantity" name="quantity" type="number" defaultValue="1" min="1" className="col-span-3" required/>
+                  <Input id="quantity" name="quantity" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} min="1" className="col-span-3" required/>
                 </div>
               </div>
               <DialogFooter>
@@ -319,15 +326,15 @@ export default function MasterPage() {
                     <div className="grid gap-4 py-4">
                       <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="name" className="text-right">Nombre</Label>
-                        <Input id="name" name="name" className="col-span-3" required />
+                        <Input id="name" name="name" className="col-span-3" required value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
                       </div>
                       <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="email" className="text-right">Correo</Label>
-                        <Input id="email" name="email" type="email" className="col-span-3" required />
+                        <Input id="email" name="email" type="email" className="col-span-3" required value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
                       </div>
                       <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="role" className="text-right">Rol</Label>
-                        <Select name="role" required onValueChange={(value) => setSelectedRole(value as Role)} value={selectedRole}>
+                        <Select name="role" required onValueChange={(value) => setNewUserRole(value as Role)} value={newUserRole}>
                           <SelectTrigger className="col-span-3">
                             <SelectValue placeholder="Seleccione un rol" />
                           </SelectTrigger>

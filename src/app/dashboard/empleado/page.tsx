@@ -54,7 +54,11 @@ export default function EmpleadoPage() {
   const { toast } = useToast();
   const [assignedAssets, setAssignedAssets] = useState<Asset[]>([]);
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
+  
+  // State for the replacement request form
   const [selectedAssetId, setSelectedAssetId] = useState('');
+  const [reason, setReason] = useState('');
+  const [justification, setJustification] = useState('');
   const [imageFile, setImageFile] = useState<File | undefined>();
 
   useEffect(() => {
@@ -94,10 +98,6 @@ export default function EmpleadoPage() {
   
   const handleRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const reason = formData.get('reason') as string;
-    const justification = formData.get('justification') as string;
     
     if (!user || !selectedAssetId || !reason || !justification) {
       toast({ variant: "destructive", title: "Error", description: "Por favor, complete todos los campos." });
@@ -124,8 +124,9 @@ export default function EmpleadoPage() {
         toast({ title: "Solicitud Enviada", description: `Su solicitud de reposición para ${asset.name} ha sido enviada.` });
         setRequestDialogOpen(false);
         // Reset form state
-        form.reset();
         setSelectedAssetId('');
+        setReason('');
+        setJustification('');
         setImageFile(undefined);
     } catch(error) {
         console.error("Error enviando solicitud:", error);
@@ -190,11 +191,11 @@ export default function EmpleadoPage() {
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="reason" className="text-right">Motivo</Label>
-                  <Input id="reason" name="reason" placeholder="Pérdida, robo, desgaste..." className="col-span-3" required/>
+                  <Input id="reason" name="reason" placeholder="Pérdida, robo, desgaste..." className="col-span-3" required value={reason} onChange={(e) => setReason(e.target.value)} />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="justification" className="text-right">Justificación</Label>
-                  <Textarea id="justification" name="justification" placeholder="Describa lo sucedido" className="col-span-3" required/>
+                  <Textarea id="justification" name="justification" placeholder="Describa lo sucedido" className="col-span-3" required value={justification} onChange={(e) => setJustification(e.target.value)} />
                 </div>
                  <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="picture" className="text-right">Imagen</Label>

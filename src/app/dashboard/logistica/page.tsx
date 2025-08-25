@@ -31,6 +31,12 @@ export default function LogisticaPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [assignmentRequests, setAssignmentRequests] = useState<AssignmentRequest[]>([]);
+
+  // State for Add Asset form
+  const [assetSerial, setAssetSerial] = useState('');
+  const [assetName, setAssetName] = useState('');
+  const [assetLocation, setAssetLocation] = useState('');
+  const [assetStock, setAssetStock] = useState('');
   
   useEffect(() => {
     if (!loading && (!user || !['Master', 'Logistica'].includes(user.role))) {
@@ -57,23 +63,28 @@ export default function LogisticaPage() {
   
   const handleAddAsset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const serial = formData.get('serial') as string;
-    const name = formData.get('name') as string;
-    const location = formData.get('location') as string;
-    const stock = parseInt(formData.get('stock') as string, 10);
+    const stockNumber = parseInt(assetStock, 10);
     
-    if (!name || isNaN(stock) || stock <= 0) {
+    if (!assetName || isNaN(stockNumber) || stockNumber <= 0) {
         toast({ variant: "destructive", title: "Error de Validación", description: "El nombre y una cantidad de stock válida son requeridos." });
         return;
     }
 
     try {
-        await addAsset({ serial, name, location, stock });
-        toast({ title: "Activo Agregado", description: `El activo ${name} ha sido agregado al inventario.` });
-        form.reset();
-        // Maybe refresh some data here if needed
+        await addAsset({ 
+            serial: assetSerial, 
+            name: assetName, 
+            location: assetLocation, 
+            stock: stockNumber 
+        });
+        toast({ title: "Activo Agregado", description: `El activo ${assetName} ha sido agregado al inventario.` });
+        
+        // Reset form
+        setAssetName('');
+        setAssetSerial('');
+        setAssetLocation('');
+        setAssetStock('');
+
     } catch (error) {
         console.error("Error agregando activo:", error);
         toast({ variant: "destructive", title: "Error", description: "No se pudo agregar el activo." });
@@ -112,19 +123,19 @@ export default function LogisticaPage() {
             <form onSubmit={handleAddAsset} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="serial">Serial (Opcional)</Label>
-                <Input id="serial" name="serial" placeholder="SN12345ABC" />
+                <Input id="serial" name="serial" placeholder="SN12345ABC" value={assetSerial} onChange={(e) => setAssetSerial(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="name">Nombre / Descripción</Label>
-                <Input id="name" name="name" placeholder="Laptop Dell XPS 15" required/>
+                <Input id="name" name="name" placeholder="Laptop Dell XPS 15" required value={assetName} onChange={(e) => setAssetName(e.target.value)} />
               </div>
                <div className="space-y-2">
                 <Label htmlFor="stock">Cantidad (Stock)</Label>
-                <Input id="stock" name="stock" type="number" placeholder="10" required min="1" />
+                <Input id="stock" name="stock" type="number" placeholder="10" required min="1" value={assetStock} onChange={(e) => setAssetStock(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="location">Ubicación</Label>
-                <Input id="location" name="location" placeholder="Bodega Central, Estante A-3" />
+                <Input id="location" name="location" placeholder="Bodega Central, Estante A-3" value={assetLocation} onChange={(e) => setAssetLocation(e.target.value)} />
               </div>
               <Button type="submit" className="w-full">
                 <PackagePlus className="mr-2 h-4 w-4" />

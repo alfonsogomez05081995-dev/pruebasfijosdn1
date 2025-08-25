@@ -3,7 +3,7 @@ import { db, storage } from './firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, query, where, getDoc, runTransaction, DocumentData, serverTimestamp, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
-import { User } from '@/hooks/use-auth';
+import { User, Role } from '@/hooks/use-auth';
 
 // Tipos
 export interface Asset extends DocumentData {
@@ -57,12 +57,14 @@ export const createUser = async (userData: Omit<User, 'id'>) => {
   return { id: userRef.id, ...userData };
 };
 
-export const getUsers = async (roleFilter?: 'Master' | 'Logistica' | 'Empleado'): Promise<User[]> => {
+export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
     const usersRef = collection(db, 'users');
-    let q = query(usersRef);
+    let q;
 
     if (roleFilter) {
       q = query(usersRef, where('role', '==', roleFilter));
+    } else {
+      q = query(usersRef);
     }
 
     const querySnapshot = await getDocs(q);
@@ -122,7 +124,7 @@ export const updateReplacementRequestStatus = async (id: string, status: 'Aproba
 
 // ------ Logistica Services ------
 export const addAsset = async (asset: { serial?: string; name: string; location?: string; stock: number }) => {
-  const newAssetData: Omit<Asset, 'id'> = {
+  const newAssetData: Omit<Asset, 'id' | 'assignedDate' | 'employeeId' | 'employeeName'> = {
     name: asset.name,
     serial: asset.serial || '',
     location: asset.location || '',
