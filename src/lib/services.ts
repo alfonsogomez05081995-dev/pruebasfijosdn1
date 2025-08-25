@@ -112,11 +112,11 @@ export const updateReplacementRequestStatus = async (id: string, status: 'Aproba
 
 // ------ Logistica Services ------
 export const addAsset = async (asset: { serial: string; name: string; location: string; stock: number }) => {
-  const newAsset = {
+  const newAsset: Omit<Asset, 'id'> = {
     name: asset.name,
-    serial: asset.serial,
-    location: asset.location,
-    stock: asset.stock,
+    serial: asset.serial || '',
+    location: asset.location || '',
+    stock: asset.stock || 0,
     status: 'En stock', 
   };
   const docRef = await addDoc(collection(db, 'assets'), newAsset);
