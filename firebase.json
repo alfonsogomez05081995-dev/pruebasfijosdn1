@@ -1,14 +1,35 @@
+<<<<<<< HEAD
 
 {
   "hosting": {
     "source": ".",
+=======
+{
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "build",
+>>>>>>> 3f1afbfb1e7a07550e03ca3467ef1e5cfa21d9aa
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ],
+<<<<<<< HEAD
     "frameworksBackend": {
       "region": "us-central1"
     }
+=======
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+>>>>>>> 3f1afbfb1e7a07550e03ca3467ef1e5cfa21d9aa
   }
 }
