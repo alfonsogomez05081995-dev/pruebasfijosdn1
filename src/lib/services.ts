@@ -52,8 +52,8 @@ const initializeDefaultUsers = async () => {
     const q = query(usersRef, where('email', 'in', ['luisgm.ldv@gmail.com', 'logistica@empresa.com', 'empleado@empresa.com']));
     const snapshot = await getDocs(q);
 
-    if (snapshot.empty) {
-        console.log("No default users found. Initializing...");
+    if (snapshot.docs.length < 3) {
+        console.log("Default users missing. Initializing...");
         const batch = writeBatch(db);
         const mockUsers: Omit<User, 'id'>[] = [
             { name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
@@ -63,11 +63,11 @@ const initializeDefaultUsers = async () => {
 
         mockUsers.forEach(user => {
             const userDocRef = doc(db, 'users', user.email); // Use email as ID
-            batch.set(userDocRef, user);
+            batch.set(userDocRef, user, { merge: true }); // Use merge to avoid overwriting if user exists
         });
 
         await batch.commit();
-        console.log("Default users initialized.");
+        console.log("Default users initialized/verified.");
     }
 };
 
@@ -91,7 +91,6 @@ export const createUser = async (userData: Omit<User, 'id'>) => {
 
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
     try {
-        // Ensure default users are there if needed
         await initializeDefaultUsers();
         
         const usersRef = collection(db, 'users');
@@ -106,15 +105,10 @@ export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
         const querySnapshot = await getDocs(q);
         const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
         
-        if(users.length === 0 && !roleFilter) {
-            console.log("No users found after init, returning empty array.");
-            return [];
-        }
-
         return users;
     } catch(error) {
         console.error("Error fetching users. This might be a Firestore Rules issue.", error);
-        throw new Error("Could not fetch users. Check Firestore rules and network connection.");
+        throw new Error("No se pudieron cargar los usuarios. Verifique las reglas de Firestore.");
     }
 }
 
@@ -126,47 +120,49 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
       const assetDoc = await transaction.get(assetRef);
 
       if (!assetDoc.exists()) {
-        throw new Error("Asset not found!");
+        throw new Error("El activo seleccionado ya no existe.");
       }
 
       const assetData = assetDoc.data() as Asset;
       const currentStock = assetData.stock || 0;
-      const hasEnoughStock = currentStock >= request.quantity;
       
-      const newStatus = hasEnoughStock ? 'Pendiente de Envío' : 'Pendiente por Stock';
+      const newStatus = currentStock >= request.quantity ? 'Pendiente de Envío' : 'Pendiente por Stock';
 
-      // Create a new asset instance for the employee
-      const newAssignedAsset: Asset = {
-        ...assetData,
-        stock: 1, 
-        status: 'Recibido pendiente',
-        assignedDate: new Date().toISOString().split('T')[0],
-        employeeId: request.employeeId,
-        employeeName: request.employeeName
-      };
-      delete newAssignedAsset.id;
-      const newAssetRef = doc(collection(db, 'assets'));
-      transaction.set(newAssetRef, newAssignedAsset);
-
-      // Decrement stock from the main asset
-      if (hasEnoughStock) {
+      if (newStatus === 'Pendiente de Envío') {
+         // Create a new assigned asset for the employee
+        const newAssignedAsset: Asset = {
+          ...assetData,
+          stock: undefined, // Individual assets don't have stock
+          status: 'Recibido pendiente',
+          assignedDate: new Date().toISOString().split('T')[0],
+          employeeId: request.employeeId,
+          employeeName: request.employeeName
+        };
+        delete newAssignedAsset.id; // Firestore will generate a new ID
+        
+        // This creates a completely new document for the assigned asset
+        const newAssetRef = doc(collection(db, 'assets'));
+        transaction.set(newAssetRef, newAssignedAsset);
+        
+        // Decrement stock from the main inventory asset
         const newStock = currentStock - request.quantity;
         transaction.update(assetRef, { stock: newStock });
       }
 
-      const newRequest: Omit<AssignmentRequest, 'id'> = {
+      // Create the request document regardless of stock
+      const newRequestData: Omit<AssignmentRequest, 'id'> = {
         ...request,
         date: new Date().toISOString().split('T')[0],
         status: newStatus,
       };
       
-      const docRef = doc(collection(db, 'assignmentRequests'));
-      transaction.set(docRef, newRequest);
+      const requestRef = doc(collection(db, 'assignmentRequests'));
+      transaction.set(requestRef, newRequestData);
       
-      return { status: newStatus, ...newRequest };
+      return { status: newStatus, ...newRequestData };
     });
   } catch (error) {
-    console.error("Error sending assignment request:", error);
+    console.error("Error en la transacción de asignación:", error);
     throw error;
   }
 };
@@ -197,21 +193,39 @@ export const updateReplacementRequestStatus = async (id: string, status: 'Aproba
 // ------ Logistica Services ------
 export const addAsset = async (asset: { serial?: string; name: string; location?: string; stock: number }) => {
   try {
-    const newAssetData: Omit<Asset, 'id' | 'assignedDate' | 'employeeId' | 'employeeName'> = {
-        name: asset.name,
-        serial: asset.serial || '',
-        location: asset.location || '',
-        stock: asset.stock || 0,
-        status: 'En stock',
-    };
-    const docRef = await addDoc(collection(db, 'assets'), newAssetData);
-    console.log("Asset added successfully:", docRef.id);
-    return { id: docRef.id, ...newAssetData };
+    // Check if an asset with the same name already exists to avoid duplicates in stock
+    const assetsRef = collection(db, 'assets');
+    const q = query(assetsRef, where("name", "==", asset.name), where("status", "==", "En stock"));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+       // Asset exists, so update its stock
+       const existingAssetDoc = querySnapshot.docs[0];
+       const existingAssetRef = doc(db, 'assets', existingAssetDoc.id);
+       const newStock = (existingAssetDoc.data().stock || 0) + asset.stock;
+       await updateDoc(existingAssetRef, { stock: newStock, location: asset.location });
+       console.log("Asset stock updated successfully for:", asset.name);
+       return { id: existingAssetDoc.id, ...existingAssetDoc.data(), stock: newStock, location: asset.location };
+
+    } else {
+      // Asset doesn't exist, create a new one
+      const newAssetData: Omit<Asset, 'id' | 'assignedDate' | 'employeeId' | 'employeeName'> = {
+          name: asset.name,
+          serial: asset.serial || '',
+          location: asset.location || '',
+          stock: asset.stock || 0,
+          status: 'En stock',
+      };
+      const docRef = await addDoc(collection(db, 'assets'), newAssetData);
+      console.log("Asset added successfully:", docRef.id);
+      return { id: docRef.id, ...newAssetData };
+    }
   } catch (error) {
     console.error("Error adding asset:", error);
     throw error;
   }
 };
+
 
 export const getStockAssets = async (): Promise<Asset[]> => {
     try {
@@ -220,7 +234,7 @@ export const getStockAssets = async (): Promise<Asset[]> => {
         return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
     } catch(error) {
         console.error("Error fetching stock assets:", error);
-        throw new Error("Could not fetch stock assets.");
+        throw new Error("No se pudieron cargar los activos en stock.");
     }
 };
 
@@ -231,7 +245,7 @@ export const getAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
         return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
     } catch (error) {
         console.error("Error fetching assignment requests:", error);
-        throw new Error("Could not fetch assignment requests.");
+        throw new Error("No se pudieron cargar las solicitudes de asignación.");
     }
 };
 
@@ -241,7 +255,7 @@ export const processAssignmentRequest = async (id: string) => {
         await updateDoc(requestRef, { status: 'Enviado' });
     } catch(error) {
         console.error("Error processing assignment request:", error);
-        throw new Error("Could not process assignment request.");
+        throw new Error("No se pudo procesar la solicitud.");
     }
 };
 
@@ -255,7 +269,7 @@ export const getMyAssignedAssets = async (employeeId: string): Promise<Asset[]> 
         return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
     } catch (error) {
         console.error("Error fetching assigned assets:", error);
-        throw new Error("Could not fetch assigned assets.");
+        throw new Error("No se pudieron cargar los activos asignados.");
     }
 };
 
@@ -288,7 +302,7 @@ export const submitReplacementRequest = async (requestData: Omit<ReplacementRequ
         return { id: docRef.id, ...newRequest };
     } catch (error) {
         console.error("Error submitting replacement request:", error);
-        throw new Error("Could not submit replacement request.");
+        throw new Error("No se pudo enviar la solicitud de reposición.");
     }
 };
 
@@ -304,8 +318,6 @@ export const getAssetById = async (id: string): Promise<Asset | null> => {
         }
     } catch (error) {
         console.error(`Error fetching asset by id ${id}:`, error);
-        throw new Error("Could not fetch asset details.");
+        throw new Error("No se pudieron obtener los detalles del activo.");
     }
 };
-
-    

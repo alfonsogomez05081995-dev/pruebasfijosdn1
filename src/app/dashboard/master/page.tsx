@@ -150,9 +150,9 @@ export default function MasterPage() {
       setSelectedEmployee('');
       setQuantity('1');
       await fetchAllData(); 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error enviando solicitud:", error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud." });
+      toast({ variant: "destructive", title: "Error al enviar solicitud", description: error.message || 'No se pudo enviar la solicitud.' });
     }
   };
 
@@ -380,5 +380,3 @@ export default function MasterPage() {
     </>
   );
 }
-
-    

@@ -87,9 +87,9 @@ export default function LogisticaPage() {
         // We don't need to manually refetch, master view will do it.
         // Or in a more complex app, we would use a shared state manager.
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error agregando activo:", error);
-        toast({ variant: "destructive", title: "Error", description: "No se pudo agregar el activo." });
+        toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo agregar el activo." });
     }
   };
 
@@ -98,9 +98,9 @@ export default function LogisticaPage() {
         await processAssignmentRequest(id);
         toast({ title: "Solicitud Procesada", description: `La solicitud ha sido marcada como 'Enviado'.` });
         await fetchRequests();
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error procesando solicitud:", error);
-        toast({ variant: "destructive", title: "Error", description: "No se pudo procesar la solicitud." });
+        toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo procesar la solicitud." });
     }
   };
 
@@ -194,5 +194,3 @@ export default function LogisticaPage() {
     </>
   );
 }
-
-    
