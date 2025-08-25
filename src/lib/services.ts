@@ -43,31 +43,11 @@ export interface ReplacementRequest {
   status: 'Pendiente' | 'Aprobado' | 'Rechazado';
 }
 
-const defaultUsers: Omit<User, 'id'>[] = [
-  { name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
-  { name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
-  { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
+const defaultUsers: User[] = [
+  { id: 'luisgm.ldv@gmail.com', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
+  { id: 'logistica@empresa.com', name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
+  { id: 'empleado@empresa.com', name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
 ];
-
-export const initializeDefaultUsers = async () => {
-    try {
-        const usersRef = collection(db, "users");
-        const snapshot = await getDocs(query(usersRef));
-
-        if (snapshot.empty) {
-            console.log("No users found. Initializing default users...");
-            const batch = writeBatch(db);
-            defaultUsers.forEach(user => {
-                const newUserRef = doc(db, 'users', user.email);
-                batch.set(newUserRef, user);
-            });
-            await batch.commit();
-            console.log(`${defaultUsers.length} default user(s) created.`);
-        }
-    } catch (error) {
-        console.error("Error initializing default users:", error);
-    }
-};
 
 
 // ------ User Management Services ------
@@ -92,19 +72,22 @@ export const createUser = async (userData: Omit<User, 'id'>) => {
 
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
     try {
-        await initializeDefaultUsers();
-        
         const usersRef = collection(db, 'users');
-        let q;
+        const snapshot = await getDocs(query(usersRef));
 
-        if (roleFilter) {
-          q = query(usersRef, where('role', '==', roleFilter));
+        let users: User[];
+
+        if (snapshot.empty) {
+            console.warn("Firestore 'users' collection is empty. Returning default mock users. Any new user created will be persisted.");
+            users = defaultUsers;
         } else {
-          q = query(usersRef);
+            users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
         }
 
-        const querySnapshot = await getDocs(q);
-        const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+        if (roleFilter) {
+            return users.filter(user => user.role === roleFilter);
+        }
+        
         return users;
     } catch(error) {
         console.error("FATAL: Could not fetch users. This is a strong indicator of a Firestore Rules issue.", error);
@@ -314,3 +297,5 @@ export const getAssetById = async (id: string): Promise<Asset | null> => {
         throw new Error("No se pudieron obtener los detalles del activo.");
     }
 };
+
+    
