@@ -1,3 +1,6 @@
+
+'use client';
+
 import Link from "next/link";
 import { ArrowRight, Users, Package, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,28 +11,49 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-export default function Dashboard() {
-  const roles = [
+const allRoles = [
     {
       name: "Master",
       description: "Asigne activos y autorice reposiciones.",
       icon: Users,
       href: "/dashboard/master",
+      roles: ['Master']
     },
     {
       name: "Logística",
       description: "Ingrese y gestione el inventario de activos.",
       icon: Package,
       href: "/dashboard/logistica",
+      roles: ['Master', 'Logistica']
     },
     {
       name: "Empleado",
       description: "Gestione sus activos asignados.",
       icon: Wrench,
       href: "/dashboard/empleado",
+      roles: ['Master', 'Empleado']
     },
-  ];
+];
+
+export default function Dashboard() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/');
+    }
+  }, [user, loading, router]);
+
+  if (loading || !user) {
+    return <div>Cargando...</div>;
+  }
+
+  const availableRoles = allRoles.filter(role => role.roles.includes(user.role));
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center">
@@ -43,7 +67,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-3 md:gap-8 w-full max-w-5xl">
-        {roles.map((role) => (
+        {availableRoles.map((role) => (
           <Card key={role.name} className="flex flex-col">
             <CardHeader>
               <div className="flex items-center gap-4">

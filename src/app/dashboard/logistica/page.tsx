@@ -1,3 +1,5 @@
+
+'use client';
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,6 +20,9 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PackagePlus, Send } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 const assignmentRequests = [
   { id: 'ASG001', employee: 'Juan Perez', asset: 'Laptop Dell XPS', quantity: 1, date: '2024-05-14', status: 'Pendiente' },
@@ -26,6 +31,19 @@ const assignmentRequests = [
 ];
 
 export default function LogisticaPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && (!user || !['Master', 'Logistica'].includes(user.role))) {
+      router.push('/');
+    }
+  }, [user, loading, router]);
+
+  if (loading || !user) {
+    return <div>Cargando...</div>;
+  }
+  
   return (
     <>
       <div className="flex items-center justify-between">

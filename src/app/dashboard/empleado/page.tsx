@@ -1,4 +1,5 @@
-import Image from "next/image";
+
+'use client';
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, RefreshCw, Undo2, PlusCircle } from "lucide-react";
+import { CheckCircle, RefreshCw, Undo2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/hooks/use-auth";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 const assignedAssets = [
   { id: 'ASSET0123', name: 'Laptop Dell XPS', serial: 'SN12345', assignedDate: '2023-10-15', status: 'Activo' },
@@ -38,6 +42,19 @@ const assignedAssets = [
 
 
 export default function EmpleadoPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && (!user || user.role !== 'Empleado')) {
+      router.push('/');
+    }
+  }, [user, loading, router]);
+
+  if (loading || !user) {
+    return <div>Cargando...</div>;
+  }
+  
   return (
     <>
       <div className="flex items-center justify-between">

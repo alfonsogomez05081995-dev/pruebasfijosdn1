@@ -1,3 +1,5 @@
+
+'use client';
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -27,6 +29,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 const replacementRequests = [
   { id: 'REQ001', employee: 'Juan Perez', asset: 'Laptop Dell XPS', serial: 'SN12345', reason: 'Robo', date: '2024-05-10', status: 'Pendiente' },
@@ -35,6 +40,19 @@ const replacementRequests = [
 ];
 
 export default function MasterPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && (!user || user.role !== 'Master')) {
+      router.push('/');
+    }
+  }, [user, loading, router]);
+
+  if (loading || !user) {
+    return <div>Cargando...</div>;
+  }
+
   return (
     <>
       <div className="flex items-center justify-between">
