@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/global.css';
-
+// Componentes
 // Componentes
 import Login from './components/auth/Login';
 import Dashboard from './pages/Dashboard';
