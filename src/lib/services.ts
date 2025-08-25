@@ -49,6 +49,8 @@ const defaultUsers: Omit<User, 'id'>[] = [
   { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
 ];
 
+// This function should be called by an authenticated user (e.g., Master during first user creation)
+// to ensure it doesn't fail due to Firestore rules.
 export const initializeDefaultUsers = async () => {
     try {
         const usersRef = collection(db, "users");
@@ -67,8 +69,8 @@ export const initializeDefaultUsers = async () => {
             console.log(`${usersToCreate.length} default user(s) created.`);
         }
     } catch (error) {
-        console.error("Fatal error initializing default users. This likely means your Firestore security rules are blocking write access.", error);
-        throw new Error("No se pudieron inicializar los usuarios. Verifique las reglas de Firestore.");
+        console.error("Error initializing default users. This may indicate a Firestore Rules issue if the current user is not authenticated.", error);
+        // We don't re-throw here to avoid breaking the calling function if initialization is just a "nice-to-have"
     }
 };
 
@@ -77,6 +79,9 @@ export const initializeDefaultUsers = async () => {
 
 export const createUser = async (userData: Omit<User, 'id'>) => {
   try {
+    // Ensure default users are there when a master creates the first user
+    await initializeDefaultUsers(); 
+    
     const userRef = doc(db, 'users', userData.email);
     const userSnap = await getDoc(userRef);
 
@@ -95,7 +100,6 @@ export const createUser = async (userData: Omit<User, 'id'>) => {
 
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
     try {
-        await initializeDefaultUsers(); // Ensure default users exist
         const usersRef = collection(db, 'users');
         let q;
 
@@ -110,7 +114,7 @@ export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
         return users;
     } catch(error) {
         console.error("FATAL: Could not fetch users. This is a strong indicator of a Firestore Rules issue.", error);
-        throw new Error("No se pudieron cargar los usuarios. Verifique las reglas de seguridad de Firestore en su consola de Firebase. El acceso a la base de datos está denegado.");
+        throw new Error("No se pudieron cargar los usuarios. Verifique que sus reglas de seguridad de Firestore permiten leer la colección 'users' para usuarios autenticados.");
     }
 }
 
@@ -201,7 +205,7 @@ export const addAsset = async (asset: { serial?: string; name: string; location?
        const existingAssetDoc = querySnapshot.docs[0];
        const existingAssetRef = doc(db, 'assets', existingAssetDoc.id);
        const newStock = (existingAssetDoc.data().stock || 0) + asset.stock;
-       await updateDoc(existingAssetRef, { stock: newStock, location: asset.location });
+       await updateDoc(existingAssetRef, { stock: newStock, location: asset.location, serial: asset.serial || existingAssetDoc.data().serial || '' });
        return { id: existingAssetDoc.id, ...existingAssetDoc.data(), stock: newStock, location: asset.location };
 
     } else {
@@ -316,3 +320,5 @@ export const getAssetById = async (id: string): Promise<Asset | null> => {
         throw new Error("No se pudieron obtener los detalles del activo.");
     }
 };
+
+    
