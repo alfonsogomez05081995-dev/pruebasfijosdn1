@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuth, User } from "@/hooks/use-auth";
+import { useAuth, User, Role } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +49,7 @@ export default function MasterPage() {
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [selectedAsset, setSelectedAsset] = useState('');
+  const [selectedRole, setSelectedRole] = useState<Role | ''>('');
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'Master')) {
@@ -150,7 +151,7 @@ export default function MasterPage() {
     const formData = new FormData(form);
     const name = formData.get('name') as string;
     const email = formData.get('email') as string;
-    const role = formData.get('role') as 'Master' | 'Logistica' | 'Empleado';
+    const role = selectedRole;
 
     if (!name || !email || !role) {
       toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos." });
@@ -162,6 +163,7 @@ export default function MasterPage() {
       toast({ title: "Usuario Creado", description: `El usuario ${name} ha sido creado.` });
       setUserDialogOpen(false);
       form.reset();
+      setSelectedRole('');
       await fetchAllData();
     } catch (error) {
       console.error("Error creando usuario:", error);
@@ -195,7 +197,7 @@ export default function MasterPage() {
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="employee" className="text-right">Empleado</Label>
-                    <Select onValueChange={setSelectedEmployee} required>
+                    <Select onValueChange={setSelectedEmployee} value={selectedEmployee} required>
                         <SelectTrigger className="col-span-3">
                             <SelectValue placeholder="Seleccione un empleado" />
                         </SelectTrigger>
@@ -208,7 +210,7 @@ export default function MasterPage() {
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="asset" className="text-right">Activo</Label>
-                   <Select onValueChange={setSelectedAsset} required>
+                   <Select onValueChange={setSelectedAsset} value={selectedAsset} required>
                         <SelectTrigger className="col-span-3">
                             <SelectValue placeholder="Seleccione un activo" />
                         </SelectTrigger>
@@ -324,7 +326,7 @@ export default function MasterPage() {
                       </div>
                       <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="role" className="text-right">Rol</Label>
-                        <Select name="role" required>
+                        <Select name="role" required onValueChange={(value) => setSelectedRole(value as Role)} value={selectedRole}>
                           <SelectTrigger className="col-span-3">
                             <SelectValue placeholder="Seleccione un rol" />
                           </SelectTrigger>

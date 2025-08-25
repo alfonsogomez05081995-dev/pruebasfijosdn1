@@ -20,10 +20,11 @@ interface AuthContextType {
   logout: () => void;
 }
 
-const mockUsers: User[] = [
-  { id: '1', name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
-  { id: '2', name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
-  { id: '3', name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
+// Mock users are only for initial login. Real user data will come from Firestore.
+const mockUsers: Omit<User, 'id'>[] = [
+  { name: 'Luis G. (Master)', email: 'luisgm.ldv@gmail.com', role: 'Master' },
+  { name: 'Usuario de Logística', email: 'logistica@empresa.com', role: 'Logistica' },
+  { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
 ];
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -47,10 +48,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = (email: string, password_unused: string): boolean => {
+    // In a real app, this would call a service to get user data from Firestore
+    // For this simulation, we find a mock user and create a user object.
     const foundUser = mockUsers.find(u => u.email === email); // Password check is ignored for this simulation
     if (foundUser) {
-      setUser(foundUser);
-      localStorage.setItem('user', JSON.stringify(foundUser));
+      // The ID is typically the document ID from Firestore, which for users we've set to be the email.
+      const userToStore = { ...foundUser, id: email };
+      setUser(userToStore);
+      localStorage.setItem('user', JSON.stringify(userToStore));
       return true;
     }
     return false;
@@ -76,5 +81,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
-    
