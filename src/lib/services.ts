@@ -100,6 +100,39 @@ export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
     });
 }
 
+export const updateUser = async (userId: string, updates: Partial<Pick<User, 'name' | 'role'>>): Promise<User> => {
+    console.log("Mock updateUser called for userId:", userId, "with updates:", updates);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const userIndex = mockUsers.findIndex(u => u.id === userId);
+            if (userIndex > -1) {
+                mockUsers[userIndex] = { ...mockUsers[userIndex], ...updates };
+                console.log("Updated user:", mockUsers[userIndex]);
+                resolve(mockUsers[userIndex]);
+            } else {
+                reject(new Error("Usuario no encontrado."));
+            }
+        }, 500);
+    });
+};
+
+export const deleteUser = async (userId: string): Promise<void> => {
+    console.log("Mock deleteUser called for userId:", userId);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const initialLength = mockUsers.length;
+            mockUsers = mockUsers.filter(u => u.id !== userId);
+            if (mockUsers.length < initialLength) {
+                console.log("User deleted. Current mockUsers:", mockUsers);
+                resolve();
+            } else {
+                reject(new Error("Usuario no encontrado para eliminar."));
+            }
+        }, 500);
+    });
+};
+
+
 // ------ Master Services ------
 export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id' | 'date' | 'status'>): Promise<{ status: AssignmentRequest['status'], id: string }> => {
     console.log("Mock sendAssignmentRequest called with:", request);

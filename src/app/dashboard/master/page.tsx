@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Check, X, UserPlus } from "lucide-react";
+import { PlusCircle, Check, X, UserPlus, FilePenLine, Trash2, AlertTriangle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -27,13 +27,24 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth, User, Role } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getReplacementRequests, updateReplacementRequestStatus, sendAssignmentRequest, ReplacementRequest, getStockAssets, Asset, getUsers, createUser } from "@/lib/services";
+import { getReplacementRequests, updateReplacementRequestStatus, sendAssignmentRequest, ReplacementRequest, getStockAssets, Asset, getUsers, createUser, updateUser, deleteUser } from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 
@@ -51,6 +62,11 @@ export default function MasterPage() {
   // Dialog state
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
   const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
+  const [deleteUserDialogOpen, setDeleteUserDialogOpen] = useState(false);
+  
+  // User being manipulated
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Assignment form state
   const [selectedEmployee, setSelectedEmployee] = useState('');
@@ -175,6 +191,51 @@ export default function MasterPage() {
     } catch (error: any) {
       console.error("Error creando usuario:", error);
       toast({ variant: "destructive", title: "Error al crear usuario", description: error.message || "Un error desconocido ocurrió." });
+    }
+  };
+
+  const handleEditUserClick = (userToEdit: User) => {
+    setCurrentUser(userToEdit);
+    setNewUserName(userToEdit.name);
+    setNewUserRole(userToEdit.role);
+    setEditUserDialogOpen(true);
+  }
+
+  const handleUpdateUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!currentUser || !newUserName || !newUserRole) {
+        toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el usuario. Faltan datos." });
+        return;
+    }
+
+    try {
+        await updateUser(currentUser.id, { name: newUserName, role: newUserRole });
+        toast({ title: "Usuario Actualizado", description: `Los datos de ${newUserName} han sido actualizados.` });
+        setEditUserDialogOpen(false);
+        setCurrentUser(null);
+        await fetchAllData();
+    } catch (error: any) {
+        console.error("Error actualizando usuario:", error);
+        toast({ variant: "destructive", title: "Error al actualizar", description: error.message });
+    }
+  }
+
+  const handleDeleteUserClick = (userToDelete: User) => {
+    setCurrentUser(userToDelete);
+    setDeleteUserDialogOpen(true);
+  };
+  
+  const confirmDeleteUser = async () => {
+    if (!currentUser) return;
+    try {
+        await deleteUser(currentUser.id);
+        toast({ title: "Usuario Eliminado", description: `El usuario ${currentUser.name} ha sido eliminado.` });
+        await fetchAllData();
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Error al eliminar", description: error.message });
+    } finally {
+        setDeleteUserDialogOpen(false);
+        setCurrentUser(null);
     }
   };
 
@@ -360,6 +421,7 @@ export default function MasterPage() {
                     <TableHead>Nombre</TableHead>
                     <TableHead>Correo</TableHead>
                     <TableHead>Rol</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -370,6 +432,18 @@ export default function MasterPage() {
                       <TableCell>
                         <Badge variant={u.role === 'Master' ? 'default' : 'secondary'}>{u.role}</Badge>
                       </TableCell>
+                       <TableCell className="text-right">
+                         <div className="flex gap-2 justify-end">
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleEditUserClick(u)}>
+                                <FilePenLine className="h-4 w-4" />
+                                <span className="sr-only">Editar</span>
+                            </Button>
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleDeleteUserClick(u)}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                                <span className="sr-only">Eliminar</span>
+                            </Button>
+                         </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -377,6 +451,64 @@ export default function MasterPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Edit User Dialog */}
+      <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
+          <DialogContent>
+              <form onSubmit={handleUpdateUserSubmit}>
+                  <DialogHeader>
+                      <DialogTitle>Editar Usuario</DialogTitle>
+                      <DialogDescription>
+                          Modifique los datos del usuario. El correo no se puede cambiar.
+                      </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-4 items-center gap-4">
+                          <Label htmlFor="email-edit" className="text-right">Correo</Label>
+                          <Input id="email-edit" name="email" type="email" className="col-span-3" disabled value={currentUser?.email || ''} />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                          <Label htmlFor="name-edit" className="text-right">Nombre</Label>
+                          <Input id="name-edit" name="name" className="col-span-3" required value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                          <Label htmlFor="role-edit" className="text-right">Rol</Label>
+                          <Select name="role" required onValueChange={(value) => setNewUserRole(value as Role)} value={newUserRole}>
+                              <SelectTrigger className="col-span-3">
+                                  <SelectValue placeholder="Seleccione un rol" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="Empleado">Empleado</SelectItem>
+                                  <SelectItem value="Logistica">Logística</SelectItem>
+                                  <SelectItem value="Master">Master</SelectItem>
+                              </SelectContent>
+                          </Select>
+                      </div>
+                  </div>
+                  <DialogFooter>
+                      <Button type="submit">Guardar Cambios</Button>
+                  </DialogFooter>
+              </form>
+          </DialogContent>
+      </Dialog>
+      
+      {/* Delete User Alert Dialog */}
+       <AlertDialog open={deleteUserDialogOpen} onOpenChange={setDeleteUserDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle><AlertTriangle className="inline-block mr-2 text-destructive" />¿Está seguro?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta acción eliminará permanentemente al usuario <strong>{currentUser?.name}</strong>.
+                 No podrá deshacer esta acción.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setCurrentUser(null)}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDeleteUser}>Eliminar Usuario</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
     </>
   );
 }
