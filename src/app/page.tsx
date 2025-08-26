@@ -8,33 +8,40 @@ import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useAuth } from '@/hooks/use-auth';
 import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
+  const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (login(email, password)) {
+    const loginSuccess = login(email, password);
+    if (loginSuccess) {
         router.push('/dashboard');
     } else {
-        alert('Credenciales inválidas');
+        toast({
+            variant: "destructive",
+            title: "Error de Autenticación",
+            description: "El correo electrónico o la contraseña son incorrectos.",
+        })
     }
   };
   
   const handleQuickAccess = (role: 'Master' | 'Logistica' | 'Empleado') => {
-    let credentials = { email: '', password: '' };
+    let credentials = { email: '', password: 'password' }; // Correct password for quick access
     switch (role) {
         case 'Master':
-            credentials = { email: 'luisgm.ldv@gmail.com', password: 'password' };
+            credentials.email = 'luisgm.ldv@gmail.com';
             break;
         case 'Logistica':
-            credentials = { email: 'logistica@empresa.com', password: 'password' };
+            credentials.email = 'logistica@empresa.com';
             break;
         case 'Empleado':
-            credentials = { email: 'empleado@empresa.com', password: 'password' };
+            credentials.email = 'empleado@empresa.com';
             break;
     }
     if (login(credentials.email, credentials.password)) {
@@ -60,7 +67,7 @@ export default function LoginPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
-                <Input id="password" type="password" required value={password} onChange={e => setPassword(e.target.value)} />
+                <Input id="password" type="password" placeholder="La contraseña es 'password'" required value={password} onChange={e => setPassword(e.target.value)} />
               </div>
             </CardContent>
             <CardFooter className="flex flex-col gap-4">

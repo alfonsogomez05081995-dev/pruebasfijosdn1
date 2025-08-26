@@ -27,6 +27,9 @@ const mockUsers: Omit<User, 'id'>[] = [
   { name: 'Usuario Empleado', email: 'empleado@empresa.com', role: 'Empleado' },
 ];
 
+// For the demo, we'll use a single password for all mock users.
+const MOCK_PASSWORD = "password";
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -47,17 +50,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setLoading(false);
   }, []);
 
-  const login = (email: string, password_unused: string): boolean => {
-    // In a real app, this would call a service to get user data from Firestore
-    // For this simulation, we find a mock user and create a user object.
-    const foundUser = mockUsers.find(u => u.email === email); // Password check is ignored for this simulation
-    if (foundUser) {
-      // The ID is typically the document ID from Firestore, which for users we've set to be the email.
+  const login = (email: string, password_used: string): boolean => {
+    // Find the user by email
+    const foundUser = mockUsers.find(u => u.email === email);
+    
+    // Check if user exists and if the password is correct for the simulation
+    if (foundUser && password_used === MOCK_PASSWORD) {
       const userToStore = { ...foundUser, id: email };
       setUser(userToStore);
       localStorage.setItem('user', JSON.stringify(userToStore));
       return true;
     }
+    
+    // If user not found or password incorrect, login fails
     return false;
   };
 
