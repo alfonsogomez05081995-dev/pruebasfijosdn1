@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Check, X, UserPlus, FilePenLine, Trash2, AlertTriangle } from "lucide-react";
+import { PlusCircle, Check, X, UserPlus, FilePenLine, Trash2, AlertTriangle, ExternalLink } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -54,19 +54,11 @@ import {
   updateReplacementRequestStatus, 
   sendAssignmentRequest, 
   getStockAssets, 
-  Asset 
+  Asset,
+  ReplacementRequest,
+  ReplacementStatus
 } from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-// The interfaces for ReplacementRequest should also be in services.ts, but we define it here temporarily
-interface ReplacementRequest {
-  id?: string;
-  employee: string;
-  asset: string;
-  serial: string;
-  reason: string;
-  status: string;
-}
 
 export default function MasterPage() {
   const { userData, loading } = useAuth();
@@ -128,15 +120,65 @@ export default function MasterPage() {
       fetchAllData();
     }
   }, [userData, fetchAllData]);
+
+  const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const quantityNumber = parseInt(quantity, 10);
+    const employee = employees.find(e => e.id === selectedEmployee);
+    const asset = stockAssets.find(a => a.id === selectedAsset);
+
+    if (!employee || !asset || isNaN(quantityNumber) || quantityNumber <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos y la cantidad debe ser válida." });
+      return;
+    }
+
+    try {
+      const result = await sendAssignmentRequest({ 
+        employeeId: employee.id,
+        employeeName: employee.name, 
+        assetId: asset.id!,
+        assetName: asset.name, 
+        quantity: quantityNumber
+      });
+
+      if (result.status === 'pendiente por stock') {
+        toast({
+          variant: 'destructive',
+          title: "Stock Insuficiente",
+          description: `No hay suficiente stock para ${asset.name}. La solicitud se creó como 'Pendiente por Stock'.`,
+        });
+      } else {
+        toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantityNumber} de ${asset.name} para ${employee.name}.` });
+      }
+
+      setAssignmentDialogOpen(false);
+      setSelectedAsset('');
+      setSelectedEmployee('');
+      setQuantity('1');
+      await fetchAllData(); 
+    } catch (error: any) {
+      console.error("Error enviando solicitud:", error);
+      toast({ variant: "destructive", title: "Error al enviar solicitud", description: error.message || 'No se pudo enviar la solicitud.' });
+    }
+  };
+
+  const handleReplacementApproval = async (id: string, status: ReplacementStatus) => {
+    try {
+      await updateReplacementRequestStatus(id, status);
+      toast({ title: `Solicitud ${status === 'aprobado' ? 'Aprobada' : 'Rechazada'}` });
+      await fetchAllData();
+    } catch (error: any) {
+      console.error(`Error updating status:`, error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la solicitud." });
+    }
+  };
   
   const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
     if (!newUserEmail || !newUserRole) {
       toast({ variant: "destructive", title: "Error", description: "Correo y Rol son requeridos." });
       return;
     }
-
     try {
       await inviteUser(newUserEmail, newUserRole);
       toast({ title: "Usuario Invitado", description: `Se ha enviado una invitación a ${newUserEmail}.` });
@@ -164,7 +206,6 @@ export default function MasterPage() {
         toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el usuario. Faltan datos." });
         return;
     }
-
     try {
         await updateUser(currentUserForAction.id, { name: newUserName, role: newUserRole });
         toast({ title: "Usuario Actualizado", description: `Los datos de ${newUserName} han sido actualizados.` });
@@ -202,23 +243,113 @@ export default function MasterPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 mb-6">
         <h1 className="text-lg font-semibold md:text-2xl">Panel del Master</h1>
+        <Dialog open={assignmentDialogOpen} onOpenChange={setAssignmentDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" className="gap-1">
+              <PlusCircle className="h-4 w-4" />
+              Solicitar Asignación
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <form onSubmit={handleAssignmentSubmit}>
+              <DialogHeader>
+                <DialogTitle>Solicitar Asignación de Activos</DialogTitle>
+                <DialogDescription>
+                  Asigne nuevos activos a un empleado. El sistema validará el stock disponible.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="employee" className="text-right">Empleado</Label>
+                    <Select onValueChange={setSelectedEmployee} value={selectedEmployee} required>
+                        <SelectTrigger className="col-span-3">
+                            <SelectValue placeholder="Seleccione un empleado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {employees.map(employee => (
+                                <SelectItem key={employee.id} value={employee.id!}>{employee.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="asset" className="text-right">Activo</Label>
+                   <Select onValueChange={setSelectedAsset} value={selectedAsset} required>
+                        <SelectTrigger className="col-span-3">
+                            <SelectValue placeholder="Seleccione un activo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {stockAssets.map(asset => (
+                                <SelectItem key={asset.id} value={asset.id!}>{asset.name} (Stock: {asset.stock || 0})</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                 <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="quantity" className="text-right">Cantidad</Label>
+                  <Input id="quantity" name="quantity" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} min="1" className="col-span-3" required/>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="submit">Enviar Solicitud</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
+      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Autorizar Reposición de Activos</CardTitle>
             <CardDescription>
-              (Funcionalidad no implementada)
+              Revise y apruebe o rechace las solicitudes de reposición pendientes.
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Empleado</TableHead>
+                  <TableHead>Activo</TableHead>
+                  <TableHead>Motivo</TableHead>
+                  <TableHead>Justificación</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {replacementRequests.map((request) => (
+                  <TableRow key={request.id}>
+                    <TableCell>{request.employeeName}</TableCell>
+                    <TableCell>{request.assetName} ({request.serial})</TableCell>
+                    <TableCell>{request.reason}</TableCell>
+                    <TableCell>
+                      <a href={request.imageUrl} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">
+                        Ver Imagen <ExternalLink className="h-4 w-4" />
+                      </a>
+                    </TableCell>
+                    <TableCell className="text-right">
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReplacementApproval(request.id!, 'aprobado')}>
+                            <Check className="h-4 w-4 text-green-500" />
+                            <span className="sr-only">Aprobar</span>
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReplacementApproval(request.id!, 'rechazado')}>
+                            <X className="h-4 w-4 text-red-500" />
+                            <span className="sr-only">Rechazar</span>
+                          </Button>
+                        </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle>Gestión de Usuarios</CardTitle>
