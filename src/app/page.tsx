@@ -1,4 +1,3 @@
-
 'use client';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -6,48 +5,34 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '../contexts/AuthContext'; // Correct import
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const auth = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false); // Add loading state
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => { // Make async
     e.preventDefault();
-    const loginSuccess = login(email, password);
-    if (loginSuccess) {
-        router.push('/dashboard');
-    } else {
+    if (!auth) return;
+    setLoading(true); // Set loading
+    try {
+      await auth.login(email, password); // Await the real login
+      router.push('/dashboard');
+    } catch (error: any) { // Catch errors
         toast({
             variant: "destructive",
             title: "Error de Autenticación",
-            description: "El correo electrónico o la contraseña son incorrectos.",
+            description: error.message, // Use the real error message
         })
     }
+    setLoading(false); // Unset loading
   };
-  
-  const handleQuickAccess = (role: 'Master' | 'Logistica' | 'Empleado') => {
-    let credentials = { email: '', password: 'password' }; // Correct password for quick access
-    switch (role) {
-        case 'Master':
-            credentials.email = 'luisgm.ldv@gmail.com';
-            break;
-        case 'Logistica':
-            credentials.email = 'logistica@empresa.com';
-            break;
-        case 'Empleado':
-            credentials.email = 'empleado@empresa.com';
-            break;
-    }
-    if (login(credentials.email, credentials.password)) {
-        router.push('/dashboard');
-    }
-  }
 
   return (
     <main className="flex flex-col items-center justify-center min-h-screen p-4">
@@ -67,23 +52,15 @@ export default function LoginPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
-                <Input id="password" type="password" placeholder="La contraseña es 'password'" required value={password} onChange={e => setPassword(e.target.value)} />
+                <Input id="password" type="password" placeholder="Ingresa tu contraseña" required value={password} onChange={e => setPassword(e.target.value)} />
               </div>
             </CardContent>
             <CardFooter className="flex flex-col gap-4">
-              <Button className="w-full" type="submit">
-                Ingresar
+              <Button className="w-full" type="submit" disabled={loading}>
+                {loading ? 'Ingresando...' : 'Ingresar'}
               </Button>
             </CardFooter>
         </form>
-         <div className="px-6 pb-6 flex flex-col gap-4">
-            <p className="text-xs text-center text-muted-foreground">O acceda como:</p>
-              <div className="flex justify-center gap-2">
-                <Button variant="link" className="p-0" onClick={() => handleQuickAccess('Master')}>Master</Button>
-                <Button variant="link" className="p-0" onClick={() => handleQuickAccess('Logistica')}>Logística</Button>
-                <Button variant="link" className="p-0" onClick={() => handleQuickAccess('Empleado')}>Empleado</Button>
-              </div>
-          </div>
       </Card>
     </main>
   );

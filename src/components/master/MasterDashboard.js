@@ -12,7 +12,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
-import { db } from '../../firebase';
+import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function MasterDashboard() {

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button, Card, Alert } from 'react-bootstrap';
 
 export default function CreateAdminUser() {
-  const { currentUser } = useAuth();
+  const { currentUser } = useAuth() || {};
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);

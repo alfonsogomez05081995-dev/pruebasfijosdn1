@@ -11,7 +11,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { getAuth } from "firebase/auth";
-import { db } from '../../firebase';
+import { db } from '../../lib/firebase';
 
 export default function LogisticDashboard() {
   const [assets, setAssets] = useState([]);

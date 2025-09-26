@@ -7,7 +7,7 @@ import {
 } from 'firebase/auth';
 // Import query tools from firestore
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { auth, db } from '../lib/firebase';
 
 // Crear el contexto
 const AuthContext = createContext();

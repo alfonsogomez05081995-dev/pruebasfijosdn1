@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from "next/link";
@@ -13,28 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { UserNav } from "@/components/user-nav";
 import { Logo } from "@/components/logo";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from '../../contexts/AuthContext'; // Correct import
 
 const allNavItems = [
-    { href: "/dashboard", label: "Inicio", icon: Home, roles: ['Master', 'Logistica', 'Empleado'] },
-    {
-      href: "/dashboard/master",
-      label: "Master",
-      icon: Users,
-      roles: ['Master']
-    },
-    {
-      href: "/dashboard/logistica",
-      label: "Logística",
-      icon: Package,
-      roles: ['Master', 'Logistica']
-    },
-    {
-      href: "/dashboard/empleado",
-      label: "Empleado",
-      icon: Wrench,
-      roles: ['Master', 'Empleado']
-    },
+    { href: "/dashboard", label: "Inicio", icon: Home, roles: ['master', 'logistic', 'employee'] },
+    { href: "/dashboard/master", label: "Master", icon: Users, roles: ['master'] },
+    { href: "/dashboard/logistica", label: "Logística", icon: Package, roles: ['master', 'logistic'] },
+    { href: "/dashboard/empleado", label: "Empleado", icon: Wrench, roles: ['master', 'employee'] },
 ];
 
 export default function DashboardLayout({
@@ -42,9 +26,9 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user } = useAuth();
+  const auth = useAuth(); // Use real hook
 
-  const navItems = allNavItems.filter(item => user && item.roles.includes(user.role));
+  const navItems = allNavItems.filter(item => auth && auth.userRole && item.roles.includes(auth.userRole));
 
   return (
     <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Container, Row, Col, Card, Button } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/router';
 
 // Importar los dashboards específicos de cada rol
 import MasterDashboard from '../components/master/MasterDashboard';
@@ -9,13 +9,13 @@ import LogisticDashboard from '../components/logistic/LogisticDashboard';
 import EmployeeDashboard from '../components/employee/EmployeeDashboard';
 
 export default function Dashboard() {
-  const { userRole, userData, logout } = useAuth();
-  const navigate = useNavigate();
+  const { userRole, userData, logout } = useAuth() || {};
+  const router = useRouter();
 
   const handleLogout = async () => {
     try {
       await logout();
-      navigate('/login');
+      router.push('/login');
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
     }

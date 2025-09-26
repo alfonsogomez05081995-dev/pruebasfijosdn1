@@ -1,25 +1,24 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Permite lectura/escritura solo a usuarios autenticados
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Reglas específicas para usuarios
+    // Reglas para la colección de usuarios
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Cualquier usuario autenticado puede leer perfiles de usuario
+      allow read: if request.auth != null;
+      // Solo el propio usuario puede modificar su perfil
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Reglas para activos
+    // Reglas para activos (assets)
     match /assets/{assetId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && getUserRole() == 'master';
+      // Solo el rol 'master' puede crear/modificar activos
+      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
     }
-    
-    // Función helper para obtener el rol del usuario
-    function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+
+    // Cualquier otra colección solo es accesible por usuarios autenticados
+    match /{document=**} {
+      allow read, write: if request.auth != null;
     }
   }
 }

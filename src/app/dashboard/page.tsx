@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from "next/link";
@@ -11,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from '../../contexts/AuthContext'; // Correct import
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -21,39 +20,40 @@ const allRoles = [
       description: "Asigne activos y autorice reposiciones.",
       icon: Users,
       href: "/dashboard/master",
-      roles: ['Master']
+      roles: ['master']
     },
     {
       name: "Logística",
       description: "Ingrese y gestione el inventario de activos.",
       icon: Package,
       href: "/dashboard/logistica",
-      roles: ['Master', 'Logistica']
+      roles: ['master', 'logistic']
     },
     {
       name: "Empleado",
       description: "Gestione sus activos asignados.",
       icon: Wrench,
       href: "/dashboard/empleado",
-      roles: ['Master', 'Empleado']
+      roles: ['master', 'employee']
     },
 ];
 
 export default function Dashboard() {
-  const { user, loading } = useAuth();
+  const auth = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (auth && !auth.loading && !auth.currentUser) {
       router.push('/');
     }
-  }, [user, loading, router]);
+  }, [auth, router]);
 
-  if (loading || !user) {
+  if (!auth || auth.loading || !auth.currentUser) {
     return <div>Cargando...</div>;
   }
 
-  const availableRoles = allRoles.filter(role => role.roles.includes(user.role));
+  const { userRole } = auth;
+  const availableRoles = allRoles.filter(role => userRole && role.roles.includes(userRole));
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center">

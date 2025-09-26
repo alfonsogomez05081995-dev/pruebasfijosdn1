@@ -35,8 +35,10 @@ export default function Login() {
       await login(email, password);
       navigate('/dashboard');
     } catch (error) {
-      console.error('Error de login:', error);
-      setError('Error al iniciar sesión: ' + error.message);
+      console.error('Login failed. Full error object:', error);
+      const errorMessage = `Error: ${error.message}
+Code: ${error.code}`;
+      setError(errorMessage);
     }
 
     setLoading(false);
@@ -56,7 +58,7 @@ export default function Login() {
                 <p className="text-muted">Sistema de Gestión de Activos</p>
               </div>
               
-              {error && <Alert variant="danger" className="mb-3">{error}</Alert>}
+              {error && <Alert variant="danger" className="mb-3" style={{ whiteSpace: 'pre-wrap' }}>{error}</Alert>}
               
               <Form onSubmit={handleSubmit}>
                 <Form.Group className="mb-3">
