@@ -1,4 +1,3 @@
-
 'use client';
 import { Button } from "@/components/ui/button";
 import {
@@ -40,16 +39,37 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuth, User, Role } from "@/hooks/use-auth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getReplacementRequests, updateReplacementRequestStatus, sendAssignmentRequest, ReplacementRequest, getStockAssets, Asset, getUsers, createUser, updateUser, deleteUser } from "@/lib/services";
+import { 
+  User, 
+  Role, 
+  inviteUser, 
+  getUsers, 
+  updateUser, 
+  deleteUser, 
+  getReplacementRequests, 
+  updateReplacementRequestStatus, 
+  sendAssignmentRequest, 
+  getStockAssets, 
+  Asset 
+} from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+// The interfaces for ReplacementRequest should also be in services.ts, but we define it here temporarily
+interface ReplacementRequest {
+  id?: string;
+  employee: string;
+  asset: string;
+  serial: string;
+  reason: string;
+  status: string;
+}
 
 export default function MasterPage() {
-  const { user, loading } = useAuth();
+  const { userData, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   
@@ -66,7 +86,7 @@ export default function MasterPage() {
   const [deleteUserDialogOpen, setDeleteUserDialogOpen] = useState(false);
   
   // User being manipulated
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUserForAction, setCurrentUserForAction] = useState<User | null>(null);
 
   // Assignment form state
   const [selectedEmployee, setSelectedEmployee] = useState('');
@@ -76,20 +96,20 @@ export default function MasterPage() {
   // User form state
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserRole, setNewUserRole] = useState<Role | ''>('');
+  const [newUserRole, setNewUserRole] = useState<Role | ''| undefined>('');
 
 
   useEffect(() => {
-    if (!loading && (!user || user.role !== 'Master')) {
+    if (!loading && (!userData || userData.role !== 'master')) {
       router.push('/');
     }
-  }, [user, loading, router]);
+  }, [userData, loading, router]);
 
   const fetchAllData = useCallback(async () => {
     try {
       const [requests, fetchedEmployees, fetchedAssets, allSystemUsers] = await Promise.all([
         getReplacementRequests(),
-        getUsers('Empleado'),
+        getUsers('empleado'), 
         getStockAssets(),
         getUsers()
       ]);
@@ -104,115 +124,52 @@ export default function MasterPage() {
   }, [toast]);
 
   useEffect(() => {
-    if (user) {
+    if (userData) {
       fetchAllData();
     }
-  }, [user, fetchAllData]);
+  }, [userData, fetchAllData]);
   
-  const handleApprove = async (id: string) => {
-    try {
-      await updateReplacementRequestStatus(id, 'Aprobado');
-      toast({ title: "Solicitud Aprobada", description: `La solicitud ha sido aprobada.` });
-      await fetchAllData();
-    } catch(error) {
-       console.error("Error al aprobar:", error);
-       toast({ variant: "destructive", title: "Error", description: "No se pudo aprobar la solicitud." });
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    try {
-      await updateReplacementRequestStatus(id, 'Rechazado');
-      toast({ variant: "destructive", title: "Solicitud Rechazada", description: `La solicitud ha sido rechazada.` });
-      await fetchAllData();
-    } catch (error) {
-       console.error("Error al rechazar:", error);
-       toast({ variant: "destructive", title: "Error", description: "No se pudo rechazar la solicitud." });
-    }
-  };
-  
-  const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const quantityNumber = parseInt(quantity, 10);
-    const employee = employees.find(e => e.id === selectedEmployee);
-    const asset = stockAssets.find(a => a.id === selectedAsset);
 
-    if (!employee || !asset || isNaN(quantityNumber) || quantityNumber <= 0) {
-      toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos y la cantidad debe ser válida." });
+    if (!newUserEmail || !newUserRole) {
+      toast({ variant: "destructive", title: "Error", description: "Correo y Rol son requeridos." });
       return;
     }
 
     try {
-      const result = await sendAssignmentRequest({ 
-        employeeId: employee.id,
-        employeeName: employee.name, 
-        assetId: asset.id!,
-        assetName: asset.name, 
-        quantity: quantityNumber
-      });
-
-      if (result.status === 'Pendiente por Stock') {
-        toast({
-          variant: 'destructive',
-          title: "Stock Insuficiente",
-          description: `No hay suficiente stock para ${asset.name}. La solicitud se creó como 'Pendiente por Stock'.`,
-        });
-      } else {
-        toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantityNumber} de ${asset.name} para ${employee.name}.` });
-      }
-
-      setAssignmentDialogOpen(false);
-      setSelectedAsset('');
-      setSelectedEmployee('');
-      setQuantity('1');
-      await fetchAllData(); 
-    } catch (error: any) {
-      console.error("Error enviando solicitud:", error);
-      toast({ variant: "destructive", title: "Error al enviar solicitud", description: error.message || 'No se pudo enviar la solicitud.' });
-    }
-  };
-
-  const handleUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!newUserName || !newUserEmail || !newUserRole) {
-      toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos." });
-      return;
-    }
-
-    try {
-      await createUser({ name: newUserName, email: newUserEmail, role: newUserRole });
-      toast({ title: "Usuario Creado", description: `El usuario ${newUserName} ha sido creado.` });
+      await inviteUser(newUserEmail, newUserRole);
+      toast({ title: "Usuario Invitado", description: `Se ha enviado una invitación a ${newUserEmail}.` });
       setUserDialogOpen(false);
-      setNewUserName('');
       setNewUserEmail('');
       setNewUserRole('');
       await fetchAllData();
     } catch (error: any) {
-      console.error("Error creando usuario:", error);
-      toast({ variant: "destructive", title: "Error al crear usuario", description: error.message || "Un error desconocido ocurrió." });
+      console.error("Error invitando usuario:", error);
+      toast({ variant: "destructive", title: "Error al invitar", description: error.message || "Un error desconocido ocurrió." });
     }
   };
 
   const handleEditUserClick = (userToEdit: User) => {
-    setCurrentUser(userToEdit);
+    setCurrentUserForAction(userToEdit);
     setNewUserName(userToEdit.name);
+    setNewUserEmail(userToEdit.email);
     setNewUserRole(userToEdit.role);
     setEditUserDialogOpen(true);
   }
 
   const handleUpdateUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!currentUser || !newUserName || !newUserRole) {
+    if (!currentUserForAction || !newUserName || !newUserRole) {
         toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el usuario. Faltan datos." });
         return;
     }
 
     try {
-        await updateUser(currentUser.id, { name: newUserName, role: newUserRole });
+        await updateUser(currentUserForAction.id, { name: newUserName, role: newUserRole });
         toast({ title: "Usuario Actualizado", description: `Los datos de ${newUserName} han sido actualizados.` });
         setEditUserDialogOpen(false);
-        setCurrentUser(null);
+        setCurrentUserForAction(null);
         await fetchAllData();
     } catch (error: any) {
         console.error("Error actualizando usuario:", error);
@@ -221,26 +178,25 @@ export default function MasterPage() {
   }
 
   const handleDeleteUserClick = (userToDelete: User) => {
-    setCurrentUser(userToDelete);
+    setCurrentUserForAction(userToDelete);
     setDeleteUserDialogOpen(true);
   };
   
   const confirmDeleteUser = async () => {
-    if (!currentUser) return;
+    if (!currentUserForAction) return;
     try {
-        await deleteUser(currentUser.id);
-        toast({ title: "Usuario Eliminado", description: `El usuario ${currentUser.name} ha sido eliminado.` });
+        await deleteUser(currentUserForAction.id);
+        toast({ title: "Usuario Eliminado", description: `El usuario ${currentUserForAction.name} ha sido eliminado.` });
         await fetchAllData();
     } catch (error: any) {
         toast({ variant: "destructive", title: "Error al eliminar", description: error.message });
     } finally {
         setDeleteUserDialogOpen(false);
-        setCurrentUser(null);
+        setCurrentUserForAction(null);
     }
   };
 
-
-  if (loading || !user) {
+  if (loading || !userData) {
     return <div>Cargando...</div>;
   }
 
@@ -248,59 +204,6 @@ export default function MasterPage() {
     <>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold md:text-2xl">Panel del Master</h1>
-        <Dialog open={assignmentDialogOpen} onOpenChange={setAssignmentDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="gap-1">
-              <PlusCircle className="h-4 w-4" />
-              Solicitar Asignación
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <form onSubmit={handleAssignmentSubmit}>
-              <DialogHeader>
-                <DialogTitle>Solicitar Asignación de Activos</DialogTitle>
-                <DialogDescription>
-                  Asigne nuevos activos a un empleado. El sistema validará el stock disponible.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="employee" className="text-right">Empleado</Label>
-                    <Select onValueChange={setSelectedEmployee} value={selectedEmployee} required>
-                        <SelectTrigger className="col-span-3">
-                            <SelectValue placeholder="Seleccione un empleado" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {employees.map(employee => (
-                                <SelectItem key={employee.id} value={employee.id!}>{employee.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="asset" className="text-right">Activo</Label>
-                   <Select onValueChange={setSelectedAsset} value={selectedAsset} required>
-                        <SelectTrigger className="col-span-3">
-                            <SelectValue placeholder="Seleccione un activo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {stockAssets.map(asset => (
-                                <SelectItem key={asset.id} value={asset.id!}>{asset.name} (Stock: {asset.stock || 0})</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="quantity" className="text-right">Cantidad</Label>
-                  <Input id="quantity" name="quantity" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} min="1" className="col-span-3" required/>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit">Enviar Solicitud</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -308,87 +211,37 @@ export default function MasterPage() {
           <CardHeader>
             <CardTitle>Autorizar Reposición de Activos</CardTitle>
             <CardDescription>
-              Revise y apruebe o rechace las solicitudes de reposición.
+              (Funcionalidad no implementada)
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Empleado</TableHead>
-                  <TableHead>Activo</TableHead>
-                  <TableHead>Motivo</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {replacementRequests.filter(req => req.status === 'Pendiente').map((request) => (
-                  <TableRow key={request.id}>
-                    <TableCell>{request.employee}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{request.asset}</div>
-                      <div className="text-sm text-muted-foreground">{request.serial}</div>
-                    </TableCell>
-                    <TableCell>{request.reason}</TableCell>
-                    <TableCell>
-                      <Badge variant={
-                          request.status === 'Pendiente' ? 'secondary' :
-                          request.status === 'Aprobado' ? 'default' :
-                          'destructive'
-                        }>
-                          {request.status}
-                        </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {request.status === 'Pendiente' && (
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApprove(request.id!)}>
-                            <Check className="h-4 w-4 text-green-500" />
-                            <span className="sr-only">Aprobar</span>
-                          </Button>
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReject(request.id!)}>
-                            <X className="h-4 w-4 text-red-500" />
-                            <span className="sr-only">Rechazar</span>
-                          </Button>
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Gestión de Empleados</CardTitle>
+                <CardTitle>Gestión de Usuarios</CardTitle>
                 <CardDescription>
-                  Cree y administre los usuarios del sistema.
+                  Invite y administre los usuarios del sistema.
                 </CardDescription>
               </div>
                <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="gap-1">
                     <UserPlus className="h-4 w-4" />
-                    Crear Usuario
+                    Invitar Usuario
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
-                  <form onSubmit={handleUserSubmit}>
+                  <form onSubmit={handleInviteUserSubmit}>
                     <DialogHeader>
-                      <DialogTitle>Crear Nuevo Usuario</DialogTitle>
+                      <DialogTitle>Invitar Nuevo Usuario</DialogTitle>
                       <DialogDescription>
-                        Complete los datos para registrar un nuevo empleado en el sistema.
+                        Ingrese el correo y asigne un rol para invitar a un nuevo usuario al sistema.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
-                      <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="name" className="text-right">Nombre</Label>
-                        <Input id="name" name="name" className="col-span-3" required value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
-                      </div>
                       <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="email" className="text-right">Correo</Label>
                         <Input id="email" name="email" type="email" className="col-span-3" required value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
@@ -400,15 +253,15 @@ export default function MasterPage() {
                             <SelectValue placeholder="Seleccione un rol" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Empleado">Empleado</SelectItem>
-                            <SelectItem value="Logistica">Logística</SelectItem>
-                            <SelectItem value="Master">Master</SelectItem>
+                            <SelectItem value="empleado">Empleado</SelectItem>
+                            <SelectItem value="logistica">Logística</SelectItem>
+                            <SelectItem value="master">Master</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button type="submit">Crear Usuario</Button>
+                      <Button type="submit">Invitar Usuario</Button>
                     </DialogFooter>
                   </form>
                 </DialogContent>
@@ -421,6 +274,7 @@ export default function MasterPage() {
                     <TableHead>Nombre</TableHead>
                     <TableHead>Correo</TableHead>
                     <TableHead>Rol</TableHead>
+                    <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -430,7 +284,10 @@ export default function MasterPage() {
                       <TableCell>{u.name}</TableCell>
                       <TableCell>{u.email}</TableCell>
                       <TableCell>
-                        <Badge variant={u.role === 'Master' ? 'default' : 'secondary'}>{u.role}</Badge>
+                        <Badge variant={u.role === 'master' ? 'default' : 'secondary'}>{u.role}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={u.status === 'activo' ? 'success' : 'outline'}>{u.status}</Badge>
                       </TableCell>
                        <TableCell className="text-right">
                          <div className="flex gap-2 justify-end">
@@ -465,7 +322,7 @@ export default function MasterPage() {
                   <div className="grid gap-4 py-4">
                       <div className="grid grid-cols-4 items-center gap-4">
                           <Label htmlFor="email-edit" className="text-right">Correo</Label>
-                          <Input id="email-edit" name="email" type="email" className="col-span-3" disabled value={currentUser?.email || ''} />
+                          <Input id="email-edit" name="email" type="email" className="col-span-3" disabled value={currentUserForAction?.email || ''} />
                       </div>
                       <div className="grid grid-cols-4 items-center gap-4">
                           <Label htmlFor="name-edit" className="text-right">Nombre</Label>
@@ -478,9 +335,9 @@ export default function MasterPage() {
                                   <SelectValue placeholder="Seleccione un rol" />
                               </SelectTrigger>
                               <SelectContent>
-                                  <SelectItem value="Empleado">Empleado</SelectItem>
-                                  <SelectItem value="Logistica">Logística</SelectItem>
-                                  <SelectItem value="Master">Master</SelectItem>
+                                  <SelectItem value="empleado">Empleado</SelectItem>
+                                  <SelectItem value="logistica">Logística</SelectItem>
+                                  <SelectItem value="master">Master</SelectItem>
                               </SelectContent>
                           </Select>
                       </div>
@@ -498,12 +355,12 @@ export default function MasterPage() {
             <AlertDialogHeader>
               <AlertDialogTitle><AlertTriangle className="inline-block mr-2 text-destructive" />¿Está seguro?</AlertDialogTitle>
               <AlertDialogDescription>
-                Esta acción eliminará permanentemente al usuario <strong>{currentUser?.name}</strong>.
+                Esta acción eliminará permanentemente al usuario <strong>{currentUserForAction?.name}</strong>.
                  No podrá deshacer esta acción.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setCurrentUser(null)}>Cancelar</AlertDialogCancel>
+              <AlertDialogCancel onClick={() => setCurrentUserForAction(null)}>Cancelar</AlertDialogCancel>
               <AlertDialogAction onClick={confirmDeleteUser}>Eliminar Usuario</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

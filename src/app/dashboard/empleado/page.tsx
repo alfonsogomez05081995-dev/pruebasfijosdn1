@@ -1,4 +1,3 @@
-
 'use client';
 import { Button } from "@/components/ui/button";
 import {
@@ -30,7 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, ChangeEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -49,7 +48,7 @@ import {
 } from "@/components/ui/alert-dialog"
 
 export default function EmpleadoPage() {
-  const { user, loading } = useAuth();
+  const { userData, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [assignedAssets, setAssignedAssets] = useState<Asset[]>([]);
@@ -62,33 +61,33 @@ export default function EmpleadoPage() {
   const [imageFile, setImageFile] = useState<File | undefined>();
 
   useEffect(() => {
-    if (!loading && (!user || !['Master', 'Empleado'].includes(user.role))) {
+    if (!loading && (!userData || !['master', 'empleado'].includes(userData.role))) {
       router.push('/');
     }
-  }, [user, loading, router]);
+  }, [userData, loading, router]);
 
   const fetchAssets = useCallback(async () => {
-    if (user?.id) {
+    if (userData?.id) {
         try {
-            const assets = await getMyAssignedAssets(user.id);
+            const assets = await getMyAssignedAssets(userData.id);
             setAssignedAssets(assets);
         } catch(error) {
             console.error("Error fetching assets:", error);
             toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar sus activos.' });
         }
     }
-  }, [user, toast]);
+  }, [userData, toast]);
 
   useEffect(() => {
-    if (user) {
+    if (userData) {
       fetchAssets();
     }
-  }, [user, fetchAssets]);
+  }, [userData, fetchAssets]);
 
   const handleConfirmReceipt = async (id: string) => {
     try {
       await confirmAssetReceipt(id);
-      toast({ title: "Recepción Confirmada", description: "El estado del activo ha sido actualizado a 'Activo'." });
+      toast({ title: "Recepción Confirmada", description: "El estado del activo ha sido actualizado a 'activo'." });
       await fetchAssets();
     } catch (error) {
       console.error("Error confirmando recepción:", error);
@@ -99,7 +98,7 @@ export default function EmpleadoPage() {
   const handleRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     
-    if (!user || !selectedAssetId || !reason || !justification) {
+    if (!userData || !selectedAssetId || !reason || !justification) {
       toast({ variant: "destructive", title: "Error", description: "Por favor, complete todos los campos." });
       return;
     }
@@ -112,11 +111,11 @@ export default function EmpleadoPage() {
         }
 
         await submitReplacementRequest({
-            employee: user.name,
-            employeeId: user.id,
-            asset: asset.name,
+            employeeName: userData.name,
+            employeeId: userData.id,
+            assetName: asset.name,
             assetId: selectedAssetId,
-            serial: asset.serial,
+            serial: asset.serial || 'N/A',
             reason,
             justification,
             imageFile,
@@ -128,9 +127,9 @@ export default function EmpleadoPage() {
         setReason('');
         setJustification('');
         setImageFile(undefined);
-    } catch(error) {
+    } catch(error: any) {
         console.error("Error enviando solicitud:", error);
-        toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud." });
+        toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo enviar la solicitud." });
     }
   };
 
@@ -142,7 +141,7 @@ export default function EmpleadoPage() {
     }
   };
 
-  if (loading || !user) {
+  if (loading || !userData) {
     return <div>Cargando...</div>;
   }
   
@@ -183,7 +182,7 @@ export default function EmpleadoPage() {
                             <SelectValue placeholder="Seleccione un activo" />
                         </SelectTrigger>
                         <SelectContent>
-                            {assignedAssets.filter(a => a.status === 'Activo').map(asset => (
+                            {assignedAssets.filter(a => a.status === 'activo').map(asset => (
                                 <SelectItem key={asset.id} value={asset.id!}>{asset.name} ({asset.serial})</SelectItem>
                             ))}
                         </SelectContent>
@@ -263,14 +262,14 @@ export default function EmpleadoPage() {
                     <div className="font-medium">{asset.name}</div>
                     <div className="text-sm text-muted-foreground">{asset.serial}</div>
                   </TableCell>
-                  <TableCell>{asset.assignedDate}</TableCell>
+                  <TableCell>{asset.assignedDate ? asset.assignedDate.toDate().toLocaleDateString() : 'N/A'}</TableCell>
                   <TableCell>
-                    <Badge variant={asset.status === 'Activo' ? 'default' : 'secondary'}>
+                    <Badge variant={asset.status === 'activo' ? 'default' : 'secondary'}>
                       {asset.status}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {asset.status === 'Recibido pendiente' && (
+                    {asset.status === 'recibido pendiente' && (
                       <Button variant="outline" size="sm" className="gap-1" onClick={() => handleConfirmReceipt(asset.id!)}>
                         <CheckCircle className="h-4 w-4" />
                         Confirmar Recibido

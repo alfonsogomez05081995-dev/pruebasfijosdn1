@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CreditCard, LogOut, User } from "lucide-react";
-import { useAuth } from '../../contexts/AuthContext'; // Correct import
+import { useAuth } from '@/contexts/AuthContext'; // Correct import
 
 export function UserNav() {
   const auth = useAuth();

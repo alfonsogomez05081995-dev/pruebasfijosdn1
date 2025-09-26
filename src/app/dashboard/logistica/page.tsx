@@ -1,4 +1,3 @@
-
 'use client';
 import { Button } from "@/components/ui/button";
 import {
@@ -20,14 +19,14 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PackagePlus, Send } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { addAsset, getAssignmentRequests, processAssignmentRequest, AssignmentRequest } from "@/lib/services";
 
 export default function LogisticaPage() {
-  const { user, loading } = useAuth();
+  const { userData, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [assignmentRequests, setAssignmentRequests] = useState<AssignmentRequest[]>([]);
@@ -39,10 +38,10 @@ export default function LogisticaPage() {
   const [assetStock, setAssetStock] = useState('');
   
   useEffect(() => {
-    if (!loading && (!user || !['Master', 'Logistica'].includes(user.role))) {
+    if (!loading && (!userData || !['master', 'logistica'].includes(userData.role))) {
       router.push('/');
     }
-  }, [user, loading, router]);
+  }, [userData, loading, router]);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -55,10 +54,10 @@ export default function LogisticaPage() {
   }, [toast]);
 
   useEffect(() => {
-    if (user) {
+    if (userData) {
         fetchRequests();
     }
-  }, [user, fetchRequests]);
+  }, [userData, fetchRequests]);
 
   
   const handleAddAsset = async (event: FormEvent<HTMLFormElement>) => {
@@ -72,7 +71,7 @@ export default function LogisticaPage() {
 
     try {
         await addAsset({ 
-            serial: assetSerial, 
+            serial: assetSerial,
             name: assetName, 
             location: assetLocation, 
             stock: stockNumber 
@@ -84,8 +83,6 @@ export default function LogisticaPage() {
         setAssetSerial('');
         setAssetLocation('');
         setAssetStock('');
-        // In a real app, we might need to trigger a refetch of data on other components.
-        // For this app, master view will refetch on its own interval/triggers.
     } catch (error: any) {
         console.error("Error agregando activo:", error);
         toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo agregar el activo." });
@@ -103,7 +100,7 @@ export default function LogisticaPage() {
     }
   };
 
-  if (loading || !user) {
+  if (loading || !userData) {
     return <div>Cargando...</div>;
   }
   
@@ -171,12 +168,12 @@ export default function LogisticaPage() {
                     <TableCell>{request.assetName}</TableCell>
                     <TableCell>{request.quantity}</TableCell>
                     <TableCell>
-                      <Badge variant={request.status === 'Pendiente de Envío' ? 'default' : request.status === 'Pendiente por Stock' ? 'destructive' : 'secondary'}>
+                      <Badge variant={request.status === 'pendiente de envío' ? 'default' : request.status === 'pendiente por stock' ? 'destructive' : 'secondary'}>
                         {request.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                       {request.status === 'Pendiente de Envío' && (
+                       {request.status === 'pendiente de envío' && (
                          <Button variant="outline" size="sm" className="gap-1" onClick={() => handleProcessRequest(request.id!)}>
                           <Send className="h-4 w-4" />
                           Procesar

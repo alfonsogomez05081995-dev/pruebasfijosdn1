@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useAuth } from '../../contexts/AuthContext'; // Correct import
+import { useAuth } from '@/contexts/AuthContext'; // Correct import
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -27,14 +27,14 @@ const allRoles = [
       description: "Ingrese y gestione el inventario de activos.",
       icon: Package,
       href: "/dashboard/logistica",
-      roles: ['master', 'logistic']
+      roles: ['master', 'logistica']
     },
     {
       name: "Empleado",
       description: "Gestione sus activos asignados.",
       icon: Wrench,
       href: "/dashboard/empleado",
-      roles: ['master', 'employee']
+      roles: ['master', 'empleado']
     },
 ];
 

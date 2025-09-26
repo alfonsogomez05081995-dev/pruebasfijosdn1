@@ -1,11 +1,12 @@
 'use client';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link'; // Import Link
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
-import { useAuth } from '../contexts/AuthContext'; // Correct import
+import { useAuth } from '@/contexts/AuthContext'; // Corrected import
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -15,23 +16,23 @@ export default function LoginPage() {
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false); // Add loading state
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => { // Make async
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth) return;
-    setLoading(true); // Set loading
+    setLoading(true);
     try {
-      await auth.login(email, password); // Await the real login
+      await auth.login(email, password);
       router.push('/dashboard');
-    } catch (error: any) { // Catch errors
+    } catch (error: any) {
         toast({
             variant: "destructive",
             title: "Error de Autenticación",
-            description: error.message, // Use the real error message
+            description: error.message,
         })
     }
-    setLoading(false); // Unset loading
+    setLoading(false);
   };
 
   return (
@@ -61,6 +62,12 @@ export default function LoginPage() {
               </Button>
             </CardFooter>
         </form>
+        <div className="pb-4 text-center text-sm">
+          ¿No tienes una cuenta?{" "}
+          <Link href="/signup" className="underline">
+            Regístrate
+          </Link>
+        </div>
       </Card>
     </main>
   );

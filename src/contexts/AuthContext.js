@@ -1,3 +1,5 @@
+"use client";
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword,
@@ -5,41 +7,40 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail
 } from 'firebase/auth';
-// Import query tools from firestore
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
-// Crear el contexto
+// Create context
 const AuthContext = createContext();
 
-// Hook personalizado para usar el contexto
+// Custom hook to use the context
 export function useAuth() {
   return useContext(AuthContext);
 }
 
-// Proveedor del contexto que envolverá toda la aplicación
+// Context provider
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Función para login
+  // Login function
   function login(email, password) {
     return signInWithEmailAndPassword(auth, email, password);
   }
 
-  // Función para logout
+  // Logout function
   function logout() {
     return signOut(auth);
   }
 
-  // Función para resetear contraseña
+  // Password reset function
   function resetPassword(email) {
     return sendPasswordResetEmail(auth, email);
   }
 
-  // Obtener datos del usuario desde Firestore
+  // Fetch user data from Firestore
   const fetchUserData = async (user) => {
     if (!user) {
       setUserData(null);
@@ -47,22 +48,33 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    console.log("Fetching user data for:", user.email);
-
     try {
       // Query for user document with matching lowercase email
-      const q = query(collection(db, "users"), where("email_lowercase", "==", user.email.toLowerCase()));
+      const q = query(collection(db, "users"), where("email", "==", user.email.toLowerCase()));
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
-        // Assuming email is unique, take the first document
         const userDoc = querySnapshot.docs[0];
-        const userData = userDoc.data();
-        setUserData(userData);
-        setUserRole(userData.role || null);
+        const currentData = userDoc.data();
+
+        if (currentData.status === 'invitado') {
+          // This is an invited user logging in. Let's activate them.
+          await updateDoc(userDoc.ref, {
+            status: 'active',
+            uid: user.uid // Add the auth UID to the document
+          });
+          // Re-fetch the (now updated) data to ensure UI has the latest info
+          const updatedDoc = await getDoc(userDoc.ref);
+          const updatedData = updatedDoc.data();
+          setUserData(updatedData);
+          setUserRole(updatedData.role || null);
+        } else {
+          // This is a normal active user
+          setUserData(currentData);
+          setUserRole(currentData.role || null);
+        }
       } else {
         // No document found for this email
-        console.log("No user document found for email:", user.email);
         setUserData(null);
         setUserRole(null);
       }
@@ -76,7 +88,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
-      await fetchUserData(user); // Pass the full user object
+      await fetchUserData(user);
       setLoading(false);
     });
 
@@ -85,7 +97,7 @@ export function AuthProvider({ children }) {
   }, []);
 
 
-  // Valor que estará disponible en todos los componentes
+  // Value available to all components
   const value = {
     currentUser,
     userRole,
@@ -97,7 +109,6 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {/* No renderizar hijos hasta terminar de verificar autenticación */}
       {!loading && children}
     </AuthContext.Provider>
   );
