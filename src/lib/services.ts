@@ -18,10 +18,11 @@ export interface User {
 }
 
 export type AssetStatus = 'activo' | 'recibido pendiente' | 'en devolución' | 'en stock' | 'baja' | 'en disputa';
-export type AssetType = 'computo' | 'electrica' | 'manual';
+export type AssetType = 'equipo_computo' | 'herramienta_electrica' | 'herramienta_manual';
 
 export interface Asset {
   id: string;
+  reference?: string;
   name: string;
   serial?: string;
   location?: string;
@@ -44,6 +45,8 @@ export interface AssignmentRequest {
   quantity: number;
   date: Timestamp;
   status: AssignmentStatus;
+  trackingNumber?: string;
+  carrier?: string;
 }
 
 export type ReplacementStatus = 'pendiente' | 'aprobado' | 'rechazado';
@@ -104,7 +107,27 @@ export const deleteUser = async (userId: string): Promise<void> => {
 
 // ------------------- LOGISTICS SERVICES -------------------
 
-export const addAsset = async (assetData: { name: string; serial?: string; location?: string; stock: number; tipo: AssetType }): Promise<void> => {
+export type NewAssetData = {
+  reference?: string;
+  name: string;
+  serial?: string;
+  location: string;
+  stock: number;
+  tipo: AssetType;
+};
+
+export const addAssetsInBatch = async (assets: NewAssetData[]): Promise<void> => {
+  const batch = writeBatch(db);
+
+  assets.forEach((assetData) => {
+    const newAssetRef = doc(collection(db, "assets"));
+    batch.set(newAssetRef, { ...assetData, status: 'en stock' });
+  });
+
+  await batch.commit();
+};
+
+export const addAsset = async (assetData: { reference?: string; name: string; serial?: string; location?: string; stock: number; tipo: AssetType }): Promise<void> => {
   await runTransaction(db, async (transaction) => {
     const stockAssetsQuery = query(collection(db, "assets"), where("name", "==", assetData.name), where("status", "==", "en stock"));
     const stockAssetsSnapshot = await getDocs(stockAssetsQuery);
@@ -127,8 +150,72 @@ export const getAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
 };
 
-export const processAssignmentRequest = async (requestId: string): Promise<void> => {
-  await updateDoc(doc(db, "assignmentRequests", requestId), { status: 'enviado' });
+export const getAllAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
+  const requestsRef = collection(db, "assignmentRequests");
+  const querySnapshot = await getDocs(requestsRef);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
+};
+
+export const processAssignmentRequest = async (
+  requestId: string, 
+  trackingNumber: string, 
+  carrier: string, 
+  serialNumber?: string
+): Promise<void> => {
+  await runTransaction(db, async (transaction) => {
+    // 1. Get the request document
+    const requestRef = doc(db, "assignmentRequests", requestId);
+    const requestDoc = await transaction.get(requestRef);
+    if (!requestDoc.exists()) {
+      throw new Error("Solicitud no encontrada.");
+    }
+    const requestData = requestDoc.data() as Omit<AssignmentRequest, 'id'>;
+
+    // 2. Get the source asset from stock
+    const stockAssetRef = doc(db, "assets", requestData.assetId);
+    const stockAssetDoc = await transaction.get(stockAssetRef);
+    if (!stockAssetDoc.exists()) {
+      throw new Error("Activo en stock no encontrado.");
+    }
+    const stockAssetData = stockAssetDoc.data();
+
+    // 3. Validate stock and serial number
+    const isSerializable = ['equipo_computo', 'herramienta_electrica'].includes(stockAssetData.tipo);
+    if (isSerializable && !serialNumber) {
+      throw new Error("Se requiere un número de serial para este tipo de activo.");
+    }
+    if (isSerializable && requestData.quantity !== 1) {
+      throw new Error("No se puede asignar más de una unidad de un activo con serial en una sola solicitud.");
+    }
+    const currentStock = stockAssetData.stock || 0;
+    if (currentStock < requestData.quantity) {
+      throw new Error(`Stock insuficiente. Stock actual: ${currentStock}, Solicitado: ${requestData.quantity}.`);
+    }
+
+    // 4. Create a new asset document for the employee
+    const newAssetForEmployeeRef = doc(collection(db, "assets"));
+    transaction.set(newAssetForEmployeeRef, {
+      name: stockAssetData.name,
+      reference: stockAssetData.reference || '',
+      tipo: stockAssetData.tipo,
+      serial: serialNumber || null,
+      status: 'recibido pendiente',
+      employeeId: requestData.employeeId,
+      employeeName: requestData.employeeName,
+      assignedDate: Timestamp.now(),
+      stock: requestData.quantity, // The quantity being assigned to the employee
+    });
+
+    // 5. Decrement the stock of the source asset
+    transaction.update(stockAssetRef, { stock: currentStock - requestData.quantity });
+
+    // 6. Update the original request to mark as sent
+    transaction.update(requestRef, {
+      status: 'enviado',
+      trackingNumber,
+      carrier,
+    });
+  });
 };
 
 export const getDevolutionProcesses = async (): Promise<DevolutionProcess[]> => {
