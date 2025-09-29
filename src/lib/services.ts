@@ -30,6 +30,7 @@ export interface Asset {
   tipo: AssetType;
   stock?: number;
   employeeId?: string;
+  employeeUid?: string; // Added for security rules
   employeeName?: string;
   assignedDate?: Timestamp;
   rejectionReason?: string;
@@ -171,7 +172,15 @@ export const processAssignmentRequest = async (
     }
     const requestData = requestDoc.data() as Omit<AssignmentRequest, 'id'>;
 
-    // 2. Get the source asset from stock
+    // 2. Get the assigned employee's user document to retrieve their UID
+    const userRef = doc(db, "users", requestData.employeeId);
+    const userDoc = await transaction.get(userRef);
+    if (!userDoc.exists() || !userDoc.data()?.uid) {
+      throw new Error("El documento del empleado asignado no es válido o no tiene un UID de autenticación.");
+    }
+    const employeeUid = userDoc.data()?.uid;
+
+    // 3. Get the source asset from stock
     const stockAssetRef = doc(db, "assets", requestData.assetId);
     const stockAssetDoc = await transaction.get(stockAssetRef);
     if (!stockAssetDoc.exists()) {
@@ -179,7 +188,7 @@ export const processAssignmentRequest = async (
     }
     const stockAssetData = stockAssetDoc.data();
 
-    // 3. Validate stock and serial number
+    // 4. Validate stock and serial number
     const isSerializable = ['equipo_computo', 'herramienta_electrica'].includes(stockAssetData.tipo);
     if (isSerializable && !serialNumber) {
       throw new Error("Se requiere un número de serial para este tipo de activo.");
@@ -192,7 +201,7 @@ export const processAssignmentRequest = async (
       throw new Error(`Stock insuficiente. Stock actual: ${currentStock}, Solicitado: ${requestData.quantity}.`);
     }
 
-    // 4. Create a new asset document for the employee
+    // 5. Create a new asset document for the employee
     const newAssetForEmployeeRef = doc(collection(db, "assets"));
     transaction.set(newAssetForEmployeeRef, {
       name: stockAssetData.name,
@@ -201,15 +210,16 @@ export const processAssignmentRequest = async (
       serial: serialNumber || null,
       status: 'recibido pendiente',
       employeeId: requestData.employeeId,
+      employeeUid: employeeUid, // Add the UID for security rules
       employeeName: requestData.employeeName,
       assignedDate: Timestamp.now(),
       stock: requestData.quantity, // The quantity being assigned to the employee
     });
 
-    // 5. Decrement the stock of the source asset
+    // 6. Decrement the stock of the source asset
     transaction.update(stockAssetRef, { stock: currentStock - requestData.quantity });
 
-    // 6. Update the original request to mark as sent
+    // 7. Update the original request to mark as sent
     transaction.update(requestRef, {
       status: 'enviado',
       trackingNumber,

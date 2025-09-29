@@ -184,82 +184,94 @@ export default function LogisticaPage() {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+        const fileContent = e.target?.result;
+        if (!fileContent) {
+            toast({ variant: "destructive", title: "Error", description: "No se pudo leer el archivo." });
+            return;
+        }
 
-        if (json.length === 0) {
-          toast({ variant: "destructive", title: "Sin Datos", description: "El archivo Excel está vacío." });
+        let rows: any[][];
+        // Check if the file is likely a text file (CSV/TSV)
+        if (bulkFile.type.startsWith("text/") || bulkFile.name.endsWith('.csv') || bulkFile.name.endsWith('.tsv')) {
+            const text = new TextDecoder("utf-8").decode(fileContent as ArrayBuffer);
+            // Simple parser for CSV/TSV, handles tab or comma delimiters
+            rows = text.split('\n').map(line => line.trim().split(/\t|,/)).filter(row => row.length > 1 || (row.length === 1 && row[0] !== ''));
+        } else { // Assume Excel file
+            const workbook = XLSX.read(fileContent, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+        }
+
+        if (rows.length < 2) {
+          toast({ variant: "destructive", title: "Sin Datos", description: "El archivo está vacío o no tiene un formato válido." });
           return;
         }
 
-        const normalizeString = (str: string) => 
-          str.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const originalHeaders = rows[0];
+        const dataRows = rows.slice(1);
 
-        const requiredHeaders = ['referencia', 'descripcion', 'serial', 'tipo de activo', 'cantidad', 'ubicacion'];
-        const originalHeaders = Object.keys(json[0] as any);
+        console.log("Headers detectados por el sistema:", originalHeaders);
+
+        const normalizeString = (str: any) => 
+          str ? str.toString().trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
+
+        const baseRequiredHeaders = ['referencia', 'descripcion', 'serial', 'tipo de activo', 'cantidad', 'ubicacion'];
         const normalizedFoundHeaders = originalHeaders.map(h => normalizeString(h));
         
-        const missingHeaders = requiredHeaders.filter(h => !normalizedFoundHeaders.includes(h));
+        const missingHeaders = baseRequiredHeaders.filter(h => !normalizedFoundHeaders.includes(h));
 
         if (missingHeaders.length > 0) {
-          const errorMessage = `Columnas requeridas faltantes: ${missingHeaders.join(', ')}. Las columnas encontradas en el archivo son: ${originalHeaders.join(', ')}`;
+          const errorMessage = `Columnas requeridas faltantes: ${missingHeaders.join(', ')}. Las columnas encontradas son: ${originalHeaders.join(', ')}`;
           console.error("Error de Cabecera:", errorMessage);
-          toast({
-            variant: "destructive",
-            title: "Error de Cabecera",
-            description: errorMessage,
-            duration: 9000,
-          });
+          toast({ variant: "destructive", title: "Error de Cabecera", description: errorMessage, duration: 9000 });
           return;
         }
 
-        const keyMap: { [key: string]: string } = {};
-        originalHeaders.forEach(header => {
-            const normalized = normalizeString(header);
-            if (requiredHeaders.includes(normalized)) {
-                keyMap[normalized] = header;
-            }
+        const indexMap: { [key: string]: number } = {};
+        normalizedFoundHeaders.forEach((header, index) => {
+            indexMap[header] = index;
         });
 
         const assetsToCreate: NewAssetData[] = [];
         const errors: string[] = [];
 
-        json.forEach((row: any, index: number) => {
-          const tipoDeActivoRaw = row[keyMap['tipo de activo']];
-          const tipo = typeof tipoDeActivoRaw === 'string' ? normalizeString(tipoDeActivoRaw).replace(/ /g, '_') as AssetType : '';
-          const serial = row[keyMap.serial];
-          const cantidad = parseInt(row[keyMap.cantidad], 10);
+        dataRows.forEach((row: any[], index: number) => {
+          if (row.every(cell => cell === null || cell === '')) return;
+
+          const tipoDeActivoRaw = row[indexMap['tipo de activo']];
+          const tipo = normalizeString(tipoDeActivoRaw).replace(/ /g, '_') as AssetType;
+          const serial = row[indexMap.serial] || ""; // Ensure serial is a string
+          const cantidadStr = row[indexMap.cantidad];
+          const cantidad = parseInt(cantidadStr, 10);
 
           if (!['equipo_computo', 'herramienta_electrica', 'herramienta_manual'].includes(tipo)) {
-            errors.push(`Fila ${index + 2}: 'Tipo de Activo' (${tipoDeActivoRaw}) inválido.`);
+            errors.push(`Fila ${index + 2}: 'Tipo de Activo' ('${tipoDeActivoRaw}') inválido.`);
             return;
           }
 
           if (['equipo_computo', 'herramienta_electrica'].includes(tipo) && !serial) {
-            errors.push(`Fila ${index + 2}: El serial es obligatorio para este tipo de activo.`);
+            errors.push(`Fila ${index + 2}: El serial es obligatorio para 'Equipo de Computo' o 'Herramienta Eléctrica'.`);
             return;
           }
           
           if (serial && cantidad !== 1) {
-            errors.push(`Fila ${index + 2}: La cantidad para activos con serial debe ser 1.`);
+            errors.push(`Fila ${index + 2}: La cantidad para activos con serial debe ser 1 (encontrado: ${cantidadStr}).`);
             return;
           }
 
           if (isNaN(cantidad) || cantidad <= 0) {
-            errors.push(`Fila ${index + 2}: La cantidad debe ser un número mayor a 0.`);
+            errors.push(`Fila ${index + 2}: La cantidad ('${cantidadStr}') debe ser un número mayor a 0.`);
             return;
           }
 
           assetsToCreate.push({
-            reference: row[keyMap.referencia],
-            name: row[keyMap.descripcion],
+            reference: row[indexMap.referencia] || "",
+            name: row[indexMap.descripcion] || "",
             serial: serial,
             tipo: tipo,
             stock: cantidad,
-            location: row[keyMap.ubicacion],
+            location: row[indexMap.ubicacion] || "",
           });
         });
 
@@ -275,7 +287,7 @@ export default function LogisticaPage() {
 
         await addAssetsInBatch(assetsToCreate);
         toast({ title: "Carga Exitosa", description: `${assetsToCreate.length} activos han sido agregados al inventario.` });
-        fetchAllData();
+        await fetchAllData();
 
       } catch (error: any) {
         console.error("Error en la carga masiva:", error);

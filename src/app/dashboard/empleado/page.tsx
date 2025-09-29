@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, RefreshCw, Undo2, AlertTriangle, XCircle } from "lucide-react";
+import { CheckCircle, RefreshCw, Undo2, AlertTriangle, XCircle, PackageCheck, PackageX } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,17 +24,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, FormEvent, ChangeEvent, useCallback } from "react";
+import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getMyAssignedAssets, confirmAssetReceipt, rejectAssetReceipt, submitReplacementRequest, Asset, getAssetById, initiateDevolutionProcess } from "@/lib/services";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getMyAssignedAssets, confirmAssetReceipt, rejectAssetReceipt, initiateDevolutionProcess, Asset } from "@/lib/services";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,23 +41,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 
 export default function EmpleadoPage() {
   const { userData, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [assignedAssets, setAssignedAssets] = useState<Asset[]>([]);
-  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
   const [assetToActOn, setAssetToActOn] = useState<Asset | null>(null);
-  
-  // State for forms
   const [rejectionReason, setRejectionReason] = useState('');
-  const [selectedAssetId, setSelectedAssetId] = useState('');
-  const [reason, setReason] = useState('');
-  const [justification, setJustification] = useState('');
-  const [imageFile, setImageFile] = useState<File | undefined>();
 
   useEffect(() => {
     if (!loading && (!userData || !['master', 'empleado'].includes(userData.role))) {
@@ -101,6 +90,7 @@ export default function EmpleadoPage() {
   const handleOpenRejectionDialog = (asset: Asset) => {
     setAssetToActOn(asset);
     setRejectionDialogOpen(true);
+    setRejectionReason('');
   };
 
   const handleRejectReceipt = async (event: FormEvent<HTMLFormElement>) => {
@@ -113,20 +103,11 @@ export default function EmpleadoPage() {
       await rejectAssetReceipt(assetToActOn.id, rejectionReason);
       toast({ title: "Recepción Rechazada", description: "El activo ha sido marcado como 'en disputa'. Logística será notificada." });
       setRejectionDialogOpen(false);
-      setRejectionReason('');
       await fetchAssets();
     } catch (error) {
       console.error("Error rechazando recepción:", error);
       toast({ variant: "destructive", title: "Error", description: "No se pudo rechazar la recepción." });
     }
-  };
-  
-  const handleRequestSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    // ... (implementation remains the same)
-  };
-
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    // ... (implementation remains the same)
   };
 
   const handleInitiateDevolution = async () => {
@@ -141,6 +122,9 @@ export default function EmpleadoPage() {
     }
   };
 
+  const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente');
+  const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente');
+
   if (loading || !userData) {
     return <div>Cargando...</div>;
   }
@@ -151,11 +135,91 @@ export default function EmpleadoPage() {
         <h1 className="text-lg font-semibold md:text-2xl">Portal del Empleado</h1>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Replacement Request Dialog */}
-        <Dialog open={requestDialogOpen} onOpenChange={setRequestDialogOpen}>{/* ... */}</Dialog>
-        
-        {/* Asset Return Alert */}
+      {/* Pending Assets Table */}
+      {pendingAssets.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Activos Pendientes de Recepción</CardTitle>
+            <CardDescription>Confirme o rechace los activos que le han sido enviados.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Activo</TableHead>
+                  <TableHead>Serial</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingAssets.map((asset) => (
+                  <TableRow key={asset.id}>
+                    <TableCell>{asset.name}</TableCell>
+                    <TableCell>{asset.serial || 'N/A'}</TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" className="mr-2" onClick={() => handleConfirmReceipt(asset.id)}>
+                        <PackageCheck className="h-4 w-4 mr-2" />
+                        Confirmar
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => handleOpenRejectionDialog(asset)}>
+                        <PackageX className="h-4 w-4 mr-2" />
+                        Rechazar
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* My Assets Table */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Mis Activos</CardTitle>
+          <CardDescription>Activos actualmente bajo su custodia.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Activo</TableHead>
+                <TableHead>Serial</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {myAssets.length > 0 ? (
+                myAssets.map((asset) => (
+                  <TableRow key={asset.id}>
+                    <TableCell>{asset.name}</TableCell>
+                    <TableCell>{asset.serial || 'N/A'}</TableCell>
+                    <TableCell>
+                      <Badge variant={asset.status === 'activo' ? 'success' : asset.status === 'en devolución' ? 'warning' : 'outline'}>
+                        {asset.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {asset.status === 'activo' && (
+                        <Button size="sm" variant="outline" disabled>Solicitar Reemplazo</Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center">No tiene activos asignados.</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Asset Return Alert */}
+      <div className="mt-6">
         <AlertDialog>
           <AlertDialogTrigger asChild>
              <Card className="cursor-pointer hover:border-destructive">
@@ -164,7 +228,7 @@ export default function EmpleadoPage() {
                   <div>
                     <CardTitle>Devolución de Activos</CardTitle>
                     <CardDescription>
-                      Inicie el proceso de devolución al salir de la empresa.
+                      Inicie el proceso de devolución de todos sus activos al finalizar su contrato.
                     </CardDescription>
                   </div>
                 </CardHeader>
@@ -174,7 +238,7 @@ export default function EmpleadoPage() {
             <AlertDialogHeader>
               <AlertDialogTitle><AlertTriangle className="inline-block mr-2 text-destructive" />¿Está seguro?</AlertDialogTitle>
               <AlertDialogDescription>
-                Esta acción iniciará el proceso de devolución de TODOS sus activos asignados. 
+                Esta acción iniciará el proceso de devolución de TODOS sus activos con estado 'activo'. 
                 Es un paso requerido para generar su paz y salvo. No podrá deshacer esta acción.
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -186,11 +250,31 @@ export default function EmpleadoPage() {
         </AlertDialog>
       </div>
 
-      {/* My Assigned Assets Table */}
-      <Card className="mt-6">{/* ... */}</Card>
-
       {/* Rejection Dialog */}
-      <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>{/* ... */}</Dialog>
+      <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>
+        <DialogContent>
+          <form onSubmit={handleRejectReceipt}>
+            <DialogHeader>
+              <DialogTitle>Rechazar Activo</DialogTitle>
+              <DialogDescription>
+                Por favor, explique por qué está rechazando la recepción de este activo. Sea lo más detallado posible.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <Textarea
+                placeholder="Ej: El equipo llegó con la pantalla rota..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRejectionDialogOpen(false)}>Cancelar</Button>
+              <Button type="submit">Enviar Rechazo</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

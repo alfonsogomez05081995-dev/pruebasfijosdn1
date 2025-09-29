@@ -1,18 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId} {
-      // WARNING: These rules are permissive for prototyping on the Spark plan.
-      // They allow any client to read the user list and update an invited user.
-      // In a production environment, this logic should be handled by a Cloud Function.
-      allow read: if true;
-      allow update: if resource.data.status == 'invitado';
-
-      // Only admins can create or delete user records.
-      allow create, delete: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
-    }
-
-    // Fallback for other collections
     match /{document=**} {
       allow read, write: if request.auth != null;
     }
