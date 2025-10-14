@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -194,8 +195,8 @@ export default function LogisticaPage() {
         // Check if the file is likely a text file (CSV/TSV)
         if (bulkFile.type.startsWith("text/") || bulkFile.name.endsWith('.csv') || bulkFile.name.endsWith('.tsv')) {
             const text = new TextDecoder("utf-8").decode(fileContent as ArrayBuffer);
-            // Simple parser for CSV/TSV, handles tab or comma delimiters
-            rows = text.split('\n').map(line => line.trim().split(/\t|,/)).filter(row => row.length > 1 || (row.length === 1 && row[0] !== ''));
+            // Simple parser for TSV, handles tab delimiters
+            rows = text.split('\n').map(line => line.trim().split('\t')).filter(row => row.length > 1 || (row.length === 1 && row[0] !== ''));
         } else { // Assume Excel file
             const workbook = XLSX.read(fileContent, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
@@ -214,7 +215,7 @@ export default function LogisticaPage() {
         console.log("Headers detectados por el sistema:", originalHeaders);
 
         const normalizeString = (str: any) => 
-          str ? str.toString().trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
+          str ? str.toString().trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "") : "";
 
         const baseRequiredHeaders = ['referencia', 'descripcion', 'serial', 'tipo de activo', 'cantidad', 'ubicacion'];
         const normalizedFoundHeaders = originalHeaders.map(h => normalizeString(h));
@@ -245,12 +246,12 @@ export default function LogisticaPage() {
           const cantidadStr = row[indexMap.cantidad];
           const cantidad = parseInt(cantidadStr, 10);
 
-          if (!['equipo_computo', 'herramienta_electrica', 'herramienta_manual'].includes(tipo)) {
+          if (!['equipo_de_computo', 'herramienta_electrica', 'herramienta_manual'].includes(tipo)) {
             errors.push(`Fila ${index + 2}: 'Tipo de Activo' ('${tipoDeActivoRaw}') inválido.`);
             return;
           }
 
-          if (['equipo_computo', 'herramienta_electrica'].includes(tipo) && !serial) {
+          if (['equipo_de_computo', 'herramienta_electrica'].includes(tipo) && !serial) {
             errors.push(`Fila ${index + 2}: El serial es obligatorio para 'Equipo de Computo' o 'Herramienta Eléctrica'.`);
             return;
           }
@@ -303,206 +304,218 @@ export default function LogisticaPage() {
   
   return (
     <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold md:text-2xl">Panel de Logística</h1>
-      </div>
+      <h1 className="text-lg font-semibold md:text-2xl mb-4">Panel de Logística</h1>
+      <Tabs defaultValue="add-assets" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="add-assets">Ingreso de Activos</TabsTrigger>
+          <TabsTrigger value="assignments">Solicitudes de Asignación <Badge className="ml-2">{assignmentRequests.length}</Badge></TabsTrigger>
+          <TabsTrigger value="devolutions">Procesos de Devolución <Badge className="ml-2">{devolutionProcesses.length}</Badge></TabsTrigger>
+          <TabsTrigger value="history">Historial</TabsTrigger>
+        </TabsList>
 
-      <div className="grid gap-6 mt-4 md:grid-cols-2">
-          <Card>
+        <TabsContent value="add-assets">
+          <div className="grid gap-6 mt-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Ingresar Nuevo Activo</CardTitle>
+                <CardDescription>Registre un nuevo activo en el inventario de forma manual.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleAddAsset} className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="asset-reference">Referencia</Label>
+                    <Input id="asset-reference" value={assetReference} onChange={(e) => setAssetReference(e.target.value)} placeholder="Ej: PROV-001" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="asset-name">Descripción</Label>
+                    <Input id="asset-name" value={assetName} onChange={(e) => setAssetName(e.target.value)} placeholder="Ej: Taladro Percutor" required />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="asset-serial">Serial (si aplica)</Label>
+                    <Input id="asset-serial" value={assetSerial} onChange={(e) => setAssetSerial(e.target.value)} placeholder="Ej: 112233-A" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="asset-type">Tipo de Activo</Label>
+                    <Select value={assetType} onValueChange={(value) => setAssetType(value as AssetType)} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccione un tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="herramienta_manual">Herramienta Manual</SelectItem>
+                        <SelectItem value="herramienta_electrica">Herramienta Eléctrica</SelectItem>
+                        <SelectItem value="equipo_computo">Equipo de Cómputo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="asset-stock">Cantidad</Label>
+                    <Input id="asset-stock" type="number" value={assetStock} onChange={(e) => setAssetStock(e.target.value)} placeholder="Ej: 10" required />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="asset-location">Ubicación</Label>
+                    <Input id="asset-location" value={assetLocation} onChange={(e) => setAssetLocation(e.target.value)} placeholder="Ej: Bodega Central" required />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    <PackagePlus className="h-4 w-4 mr-2" />
+                    Agregar Activo
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Carga Masiva de Activos</CardTitle>
+                <CardDescription>Suba un archivo Excel (.xlsx, .xls) o de texto (.tsv, .txt) con los activos.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                  <div className="grid gap-2">
+                      <Label htmlFor="bulk-file">Archivo (.xlsx, .xls, .tsv, .txt)</Label>
+                      <Input id="bulk-file" type="file" accept=".xlsx,.xls,.tsv,.txt" onChange={handleFileSelect} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                      El archivo debe tener las columnas: Referencia, Descripción, Serial, Tipo de Activo, Cantidad, Ubicación.
+                  </p>
+                  <Button onClick={handleBulkUpload} className="w-full" disabled={!bulkFile}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Cargar Archivo
+                  </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="assignments">
+          <Card className="mt-6">
             <CardHeader>
-              <CardTitle>Ingresar Nuevo Activo</CardTitle>
-              <CardDescription>Registre un nuevo activo en el inventario de forma manual.</CardDescription>
+              <CardTitle>Solicitudes de Asignación</CardTitle>
+              <CardDescription>Procese las solicitudes de asignación pendientes.</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleAddAsset} className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="asset-reference">Referencia</Label>
-                  <Input id="asset-reference" value={assetReference} onChange={(e) => setAssetReference(e.target.value)} placeholder="Ej: PROV-001" />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="asset-name">Descripción</Label>
-                  <Input id="asset-name" value={assetName} onChange={(e) => setAssetName(e.target.value)} placeholder="Ej: Taladro Percutor" required />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="asset-serial">Serial (si aplica)</Label>
-                  <Input id="asset-serial" value={assetSerial} onChange={(e) => setAssetSerial(e.target.value)} placeholder="Ej: 112233-A" />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="asset-type">Tipo de Activo</Label>
-                  <Select value={assetType} onValueChange={(value) => setAssetType(value as AssetType)} required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccione un tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="herramienta_manual">Herramienta Manual</SelectItem>
-                      <SelectItem value="herramienta_electrica">Herramienta Eléctrica</SelectItem>
-                      <SelectItem value="equipo_computo">Equipo de Cómputo</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="asset-stock">Cantidad</Label>
-                  <Input id="asset-stock" type="number" value={assetStock} onChange={(e) => setAssetStock(e.target.value)} placeholder="Ej: 10" required />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="asset-location">Ubicación</Label>
-                  <Input id="asset-location" value={assetLocation} onChange={(e) => setAssetLocation(e.target.value)} placeholder="Ej: Bodega Central" required />
-                </div>
-                <Button type="submit" className="w-full">
-                  <PackagePlus className="h-4 w-4 mr-2" />
-                  Agregar Activo
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Carga Masiva de Activos</CardTitle>
-              <CardDescription>Suba un archivo Excel (.xlsx) con los nuevos activos.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-                <div className="grid gap-2">
-                    <Label htmlFor="bulk-file">Archivo (.xlsx, .xls)</Label>
-                    <Input id="bulk-file" type="file" accept=".xlsx, .xls" onChange={handleFileSelect} />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                    El archivo debe tener las columnas: Referencia, Descripción, Serial, Tipo de Activo, Cantidad, Ubicación.
-                </p>
-                <Button onClick={handleBulkUpload} className="w-full" disabled={!bulkFile}>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Cargar Archivo
-                </Button>
-            </CardContent>
-          </Card>
-      </div>
-
-      <div className="grid gap-6 mt-6">
-        <Card>
-            <CardHeader>
-                <CardTitle>Procesos de Devolución en Curso</CardTitle>
-                <CardDescription>Verifique la devolución física de los activos de los empleados que terminan su contrato.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Accordion type="single" collapsible className="w-full">
-                {devolutionProcesses.map(process => (
-                    <AccordionItem value={process.id} key={process.id}>
-                    <AccordionTrigger>{process.employeeName} - {process.assets.filter(a => !a.verified).length} activos pendientes</AccordionTrigger>
-                    <AccordionContent>
-                        <Table>
-                        <TableHeader>
-                            <TableRow>
-                            <TableHead>Activo</TableHead>
-                            <TableHead>Serial</TableHead>
-                            <TableHead>Estado</TableHead>
-                            <TableHead className="text-right">Acción</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {process.assets.map(asset => (
-                            <TableRow key={asset.id}>
-                                <TableCell>{asset.name}</TableCell>
-                                <TableCell>{asset.serial}</TableCell>
-                                <TableCell>
-                                <Badge variant={asset.verified ? 'success' : 'outline'}>{asset.verified ? 'Verificado' : 'Pendiente'}</Badge>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                {!asset.verified && (
-                                    <Button size="sm" onClick={() => handleVerifyReturn(process.id, asset.id)}>
-                                    <CheckCheck className="h-4 w-4 mr-2" /> Verificar
-                                    </Button>
-                                )}
-                                </TableCell>
-                            </TableRow>
-                            ))}
-                        </TableBody>
-                        </Table>
-                        {process.assets.every(a => a.verified) && (
-                            <div className="text-right mt-4">
-                                <Button variant="secondary" onClick={() => handleCompleteProcess(process.id)}>Completar Proceso</Button>
-                            </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Solicitante</TableHead>
+                    <TableHead>Activo</TableHead>
+                    <TableHead>Cantidad</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Acción</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {assignmentRequests.map((req) => (
+                    <TableRow key={req.id}>
+                      <TableCell>{req.masterName}</TableCell>
+                      <TableCell>{req.assetName}</TableCell>
+                      <TableCell>{req.quantity}</TableCell>
+                      <TableCell>
+                        <Badge variant={req.status === 'pendiente de envío' ? 'warning' : 'outline'}>{req.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {req.status === 'pendiente de envío' && (
+                          <Button size="sm" onClick={() => handleOpenProcessModal(req.id)}>
+                            <Send className="h-4 w-4 mr-2" /> Procesar Envío
+                          </Button>
                         )}
-                    </AccordionContent>
-                    </AccordionItem>
-                ))}
-                </Accordion>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
-        </Card>
+          </Card>
+        </TabsContent>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Solicitudes de Asignación</CardTitle>
-            <CardDescription>Procese las solicitudes de asignación pendientes.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Solicitante</TableHead>
-                  <TableHead>Activo</TableHead>
-                  <TableHead>Cantidad</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acción</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {assignmentRequests.map((req) => (
-                  <TableRow key={req.id}>
-                    <TableCell>{req.masterName}</TableCell>
-                    <TableCell>{req.assetName}</TableCell>
-                    <TableCell>{req.quantity}</TableCell>
-                    <TableCell>
-                      <Badge variant={req.status === 'pendiente de envío' ? 'warning' : 'outline'}>{req.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {req.status === 'pendiente de envío' && (
-                        <Button size="sm" onClick={() => handleOpenProcessModal(req.id)}>
-                          <Send className="h-4 w-4 mr-2" /> Procesar Envío
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <TabsContent value="devolutions">
+          <Card className="mt-6">
+              <CardHeader>
+                  <CardTitle>Procesos de Devolución en Curso</CardTitle>
+                  <CardDescription>Verifique la devolución física de los activos de los empleados que terminan su contrato.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                  <Accordion type="single" collapsible className="w-full">
+                  {devolutionProcesses.map(process => (
+                      <AccordionItem value={process.id} key={process.id}>
+                      <AccordionTrigger>{process.employeeName} - {process.assets.filter(a => !a.verified).length} activos pendientes</AccordionTrigger>
+                      <AccordionContent>
+                          <Table>
+                          <TableHeader>
+                              <TableRow>
+                              <TableHead>Activo</TableHead>
+                              <TableHead>Serial</TableHead>
+                              <TableHead>Estado</TableHead>
+                              <TableHead className="text-right">Acción</TableHead>
+                              </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                              {process.assets.map(asset => (
+                              <TableRow key={asset.id}>
+                                  <TableCell>{asset.name}</TableCell>
+                                  <TableCell>{asset.serial}</TableCell>
+                                  <TableCell>
+                                  <Badge variant={asset.verified ? 'success' : 'outline'}>{asset.verified ? 'Verificado' : 'Pendiente'}</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                  {!asset.verified && (
+                                      <Button size="sm" onClick={() => handleVerifyReturn(process.id, asset.id)}>
+                                      <CheckCheck className="h-4 w-4 mr-2" /> Verificar
+                                      </Button>
+                                  )}
+                                  </TableCell>
+                              </TableRow>
+                              ))}
+                          </TableBody>
+                          </Table>
+                          {process.assets.every(a => a.verified) && (
+                              <div className="text-right mt-4">
+                                  <Button variant="secondary" onClick={() => handleCompleteProcess(process.id)}>Completar Proceso</Button>
+                              </div>
+                          )}
+                      </AccordionContent>
+                      </AccordionItem>
+                  ))}
+                  </Accordion>
+              </CardContent>
+          </Card>
+        </TabsContent>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Historial de Solicitudes</CardTitle>
-            <CardDescription>Historial completo de todas las solicitudes de asignación.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Activo</TableHead>
-                  <TableHead>Empleado</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Guía</TableHead>
-                  <TableHead>Transportadora</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {requestHistory.map((req) => (
-                  <TableRow key={req.id}>
-                    <TableCell>{req.assetName}</TableCell>
-                    <TableCell>{req.employeeName}</TableCell>
-                    <TableCell>
-                      <Badge variant={
-                        req.status === 'enviado' ? 'default' :
-                        req.status === 'pendiente de envío' ? 'warning' : 'outline'
-                      }>{req.status}</Badge>
-                    </TableCell>
-                    <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
-                    <TableCell>{req.carrier || 'N/A'}</TableCell>
+        <TabsContent value="history">
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Historial de Solicitudes</CardTitle>
+              <CardDescription>Historial completo de todas las solicitudes de asignación.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Activo</TableHead>
+                    <TableHead>Empleado</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Guía</TableHead>
+                    <TableHead>Transportadora</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
+                </TableHeader>
+                <TableBody>
+                  {requestHistory.map((req) => (
+                    <TableRow key={req.id}>
+                      <TableCell>{req.assetName}</TableCell>
+                      <TableCell>{req.employeeName}</TableCell>
+                      <TableCell>
+                        <Badge variant={
+                          req.status === 'enviado' ? 'default' :
+                          req.status === 'pendiente de envío' ? 'warning' : 'outline'
+                        }>{req.status}</Badge>
+                      </TableCell>
+                      <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
+                      <TableCell>{req.carrier || 'N/A'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={showProcessModal} onOpenChange={setShowProcessModal}>
         <DialogContent>

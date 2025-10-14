@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle, RefreshCw, Undo2, AlertTriangle, XCircle, PackageCheck, PackageX } from "lucide-react";
 import {
   Dialog,
@@ -131,124 +132,138 @@ export default function EmpleadoPage() {
   
   return (
     <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold md:text-2xl">Portal del Empleado</h1>
-      </div>
+      <h1 className="text-lg font-semibold md:text-2xl mb-4">Portal del Empleado</h1>
+      <Tabs defaultValue="pending" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="pending">Activos Pendientes <Badge className="ml-2">{pendingAssets.length}</Badge></TabsTrigger>
+          <TabsTrigger value="my-assets">Mis Activos</TabsTrigger>
+          <TabsTrigger value="return">Devolución</TabsTrigger>
+        </TabsList>
 
-      {/* Pending Assets Table */}
-      {pendingAssets.length > 0 && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Activos Pendientes de Recepción</CardTitle>
-            <CardDescription>Confirme o rechace los activos que le han sido enviados.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Activo</TableHead>
-                  <TableHead>Serial</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pendingAssets.map((asset) => (
-                  <TableRow key={asset.id}>
-                    <TableCell>{asset.name}</TableCell>
-                    <TableCell>{asset.serial || 'N/A'}</TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" className="mr-2" onClick={() => handleConfirmReceipt(asset.id)}>
-                        <PackageCheck className="h-4 w-4 mr-2" />
-                        Confirmar
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleOpenRejectionDialog(asset)}>
-                        <PackageX className="h-4 w-4 mr-2" />
-                        Rechazar
-                      </Button>
-                    </TableCell>
+        <TabsContent value="pending">
+          {pendingAssets.length > 0 ? (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Activos Pendientes de Recepción</CardTitle>
+                <CardDescription>Confirme o rechace los activos que le han sido enviados.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Activo</TableHead>
+                      <TableHead>Serial</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pendingAssets.map((asset) => (
+                      <TableRow key={asset.id}>
+                        <TableCell>{asset.name}</TableCell>
+                        <TableCell>{asset.serial || 'N/A'}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" className="mr-2" onClick={() => handleConfirmReceipt(asset.id)}>
+                            <PackageCheck className="h-4 w-4 mr-2" />
+                            Confirmar
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => handleOpenRejectionDialog(asset)}>
+                            <PackageX className="h-4 w-4 mr-2" />
+                            Rechazar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="mt-6">
+              <CardContent className="pt-6">
+                <p className="text-center">No tiene activos pendientes de recepción.</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="my-assets">
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Mis Activos</CardTitle>
+              <CardDescription>Activos actualmente bajo su custodia.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Activo</TableHead>
+                    <TableHead>Serial</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {myAssets.length > 0 ? (
+                    myAssets.map((asset) => (
+                      <TableRow key={asset.id}>
+                        <TableCell>{asset.name}</TableCell>
+                        <TableCell>{asset.serial || 'N/A'}</TableCell>
+                        <TableCell>
+                          <Badge variant={asset.status === 'activo' ? 'success' : asset.status === 'en devolución' ? 'warning' : 'outline'}>
+                            {asset.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {asset.status === 'activo' && (
+                            <Button size="sm" variant="outline" disabled>Solicitar Reemplazo</Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center">No tiene activos asignados.</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* My Assets Table */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Mis Activos</CardTitle>
-          <CardDescription>Activos actualmente bajo su custodia.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Activo</TableHead>
-                <TableHead>Serial</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {myAssets.length > 0 ? (
-                myAssets.map((asset) => (
-                  <TableRow key={asset.id}>
-                    <TableCell>{asset.name}</TableCell>
-                    <TableCell>{asset.serial || 'N/A'}</TableCell>
-                    <TableCell>
-                      <Badge variant={asset.status === 'activo' ? 'success' : asset.status === 'en devolución' ? 'warning' : 'outline'}>
-                        {asset.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {asset.status === 'activo' && (
-                        <Button size="sm" variant="outline" disabled>Solicitar Reemplazo</Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center">No tiene activos asignados.</TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Asset Return Alert */}
-      <div className="mt-6">
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-             <Card className="cursor-pointer hover:border-destructive">
-                <CardHeader className="flex-row items-center gap-4">
-                  <Undo2 className="h-8 w-8 text-destructive" />
-                  <div>
-                    <CardTitle>Devolución de Activos</CardTitle>
-                    <CardDescription>
-                      Inicie el proceso de devolución de todos sus activos al finalizar su contrato.
-                    </CardDescription>
-                  </div>
-                </CardHeader>
-              </Card>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle><AlertTriangle className="inline-block mr-2 text-destructive" />¿Está seguro?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta acción iniciará el proceso de devolución de TODOS sus activos con estado 'activo'. 
-                Es un paso requerido para generar su paz y salvo. No podrá deshacer esta acción.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleInitiateDevolution}>Continuar</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+        <TabsContent value="return">
+          <div className="mt-6">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Card className="cursor-pointer hover:border-destructive">
+                    <CardHeader className="flex-row items-center gap-4">
+                      <Undo2 className="h-8 w-8 text-destructive" />
+                      <div>
+                        <CardTitle>Devolución de Activos</CardTitle>
+                        <CardDescription>
+                          Inicie el proceso de devolución de todos sus activos al finalizar su contrato.
+                        </CardDescription>
+                      </div>
+                    </CardHeader>
+                  </Card>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle><AlertTriangle className="inline-block mr-2 text-destructive" />¿Está seguro?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta acción iniciará el proceso de devolución de TODOS sus activos con estado 'activo'. 
+                    Es un paso requerido para generar su paz y salvo. No podrá deshacer esta acción.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleInitiateDevolution}>Continuar</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Rejection Dialog */}
       <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>

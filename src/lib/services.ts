@@ -144,6 +144,22 @@ export const addAsset = async (assetData: { reference?: string; name: string; se
   });
 };
 
+export const getInventory = async (): Promise<Asset[]> => {
+  const assetsRef = collection(db, "assets");
+  const querySnapshot = await getDocs(assetsRef);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
+};
+
+export const updateAsset = async (assetId: string, data: Partial<Asset>): Promise<void> => {
+  const assetRef = doc(db, "assets", assetId);
+  await updateDoc(assetRef, data);
+};
+
+export const deleteAsset = async (assetId: string): Promise<void> => {
+  const assetRef = doc(db, "assets", assetId);
+  await deleteDoc(assetRef);
+};
+
 export const getAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
   const requestsRef = collection(db, "assignmentRequests");
   const q = query(requestsRef, where("status", "==", "pendiente de envío"));
@@ -301,6 +317,32 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
 
     return { status: newStatus };
   });
+};
+
+export const sendBulkAssignmentRequests = async (
+  requests: {
+    employeeId: string;
+    employeeName: string;
+    assetId: string;
+    assetName: string;
+    quantity: number;
+  }[]
+): Promise<void> => {
+  const batch = writeBatch(db);
+  const requestsRef = collection(db, "assignmentRequests");
+
+  // This implementation assumes stock has been pre-validated on the client.
+  // All requests are set to 'pendiente de envío'.
+  for (const request of requests) {
+    const newRequestRef = doc(requestsRef);
+    batch.set(newRequestRef, {
+      ...request,
+      date: Timestamp.now(),
+      status: 'pendiente de envío',
+    });
+  }
+
+  await batch.commit();
 };
 
 export const getReplacementRequests = async (): Promise<ReplacementRequest[]> => {

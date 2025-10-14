@@ -7,6 +7,7 @@ import {
   Users,
   Wrench,
   PanelLeft,
+  Warehouse, // Added for Inventory
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -15,10 +16,11 @@ import { Logo } from "@/components/logo";
 import { useAuth } from '../../contexts/AuthContext'; // Correct import
 
 const allNavItems = [
-    { href: "/dashboard", label: "Inicio", icon: Home, roles: ['master', 'logistic', 'employee'] },
+    { href: "/dashboard", label: "Inicio", icon: Home, roles: ['master', 'logistica', 'empleado'] },
     { href: "/dashboard/master", label: "Master", icon: Users, roles: ['master'] },
-    { href: "/dashboard/logistica", label: "Logística", icon: Package, roles: ['master', 'logistic'] },
-    { href: "/dashboard/empleado", label: "Empleado", icon: Wrench, roles: ['master', 'employee'] },
+    { href: "/dashboard/logistica", label: "Logística", icon: Package, roles: ['master', 'logistica'] },
+    { href: "/dashboard/stock", label: "Inventario", icon: Warehouse, roles: ['master', 'logistica'] },
+    { href: "/dashboard/empleado", label: "Empleado", icon: Wrench, roles: ['master', 'empleado'] },
 ];
 
 export default function DashboardLayout({

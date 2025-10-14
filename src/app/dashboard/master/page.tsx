@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlusCircle, Check, X, UserPlus, FilePenLine, Trash2, AlertTriangle, ExternalLink } from "lucide-react";
 import {
   Dialog,
@@ -35,7 +36,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,7 +52,7 @@ import {
   deleteUser, 
   getReplacementRequests, 
   updateReplacementRequestStatus, 
-  sendAssignmentRequest, 
+  sendBulkAssignmentRequests, 
   getStockAssets, 
   Asset,
   ReplacementRequest,
@@ -71,19 +71,15 @@ export default function MasterPage() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
   
-  // Dialog state
-  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
+  // Dialog state for User Management
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
   const [deleteUserDialogOpen, setDeleteUserDialogOpen] = useState(false);
-  
-  // User being manipulated
   const [currentUserForAction, setCurrentUserForAction] = useState<User | null>(null);
 
-  // Assignment form state
+  // New Multi-Assignment form state
   const [selectedEmployee, setSelectedEmployee] = useState('');
-  const [selectedAsset, setSelectedAsset] = useState('');
-  const [quantity, setQuantity] = useState('1');
+  const [assignmentRows, setAssignmentRows] = useState([{ id: 1, assetId: '', quantity: 1 }]);
 
   // User form state
   const [newUserName, setNewUserName] = useState('');
@@ -121,46 +117,59 @@ export default function MasterPage() {
     }
   }, [userData, fetchAllData]);
 
-  const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const quantityNumber = parseInt(quantity, 10);
-    const employee = employees.find(e => e.id === selectedEmployee);
-    const asset = stockAssets.find(a => a.id === selectedAsset);
+  // --- Multi-Assignment Handlers ---
+  const addAssignmentRow = () => {
+    setAssignmentRows([...assignmentRows, { id: Date.now(), assetId: '', quantity: 1 }]);
+  };
 
-    if (!employee || !asset || isNaN(quantityNumber) || quantityNumber <= 0) {
-      toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos y la cantidad debe ser válida." });
+  const removeAssignmentRow = (id: number) => {
+    setAssignmentRows(assignmentRows.filter(row => row.id !== id));
+  };
+
+  const handleAssignmentRowChange = (id: number, field: 'assetId' | 'quantity', value: string | number) => {
+    setAssignmentRows(assignmentRows.map(row => row.id === id ? { ...row, [field]: value } : row));
+  };
+
+  const handleBulkAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const employee = employees.find(e => e.id === selectedEmployee);
+
+    if (!employee) {
+      toast({ variant: "destructive", title: "Error", description: "Por favor, seleccione un empleado." });
       return;
     }
 
-    try {
-      const result = await sendAssignmentRequest({ 
+    const invalidRows = assignmentRows.filter(row => !row.assetId || row.quantity <= 0);
+    if (invalidRows.length > 0) {
+      toast({ variant: "destructive", title: "Error", description: "Por favor, complete todos los campos de activos y asegúrese que la cantidad sea mayor a 0." });
+      return;
+    }
+
+    const requests = assignmentRows.map(row => {
+      const asset = stockAssets.find(a => a.id === row.assetId);
+      return {
         employeeId: employee.id,
-        employeeName: employee.name, 
-        assetId: asset.id!,
-        assetName: asset.name, 
-        quantity: quantityNumber
-      });
+        employeeName: employee.name,
+        assetId: row.assetId,
+        assetName: asset?.name || '',
+        quantity: Number(row.quantity),
+      };
+    });
 
-      if (result.status === 'pendiente por stock') {
-        toast({
-          variant: 'destructive',
-          title: "Stock Insuficiente",
-          description: `No hay suficiente stock para ${asset.name}. La solicitud se creó como 'Pendiente por Stock'.`,
-        });
-      } else {
-        toast({ title: "Solicitud Enviada", description: `Se ha solicitado ${quantityNumber} de ${asset.name} para ${employee.name}.` });
-      }
-
-      setAssignmentDialogOpen(false);
-      setSelectedAsset('');
+    try {
+      await sendBulkAssignmentRequests(requests);
+      toast({ title: "Solicitudes Enviadas", description: `${requests.length} solicitudes de asignación han sido creadas para ${employee.name}.` });
+      // Reset form
       setSelectedEmployee('');
-      setQuantity('1');
-      await fetchAllData(); 
+      setAssignmentRows([{ id: 1, assetId: '', quantity: 1 }]);
+      await fetchAllData();
     } catch (error: any) {
-      console.error("Error enviando solicitud:", error);
-      toast({ variant: "destructive", title: "Error al enviar solicitud", description: error.message || 'No se pudo enviar la solicitud.' });
+      console.error("Error en asignación múltiple:", error);
+      toast({ variant: "destructive", title: "Error al Enviar", description: error.message || 'No se pudieron crear las solicitudes.' });
     }
   };
+
+  // --- End Multi-Assignment Handlers ---
 
   const handleReplacementApproval = async (id: string, status: ReplacementStatus) => {
     try {
@@ -243,94 +252,115 @@ export default function MasterPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-4 mb-6">
-        <h1 className="text-lg font-semibold md:text-2xl">Panel del Master</h1>
-        <Dialog open={assignmentDialogOpen} onOpenChange={setAssignmentDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="gap-1">
-              <PlusCircle className="h-4 w-4" />
-              Solicitar Asignación
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <form onSubmit={handleAssignmentSubmit}>
-              <DialogHeader>
-                <DialogTitle>Solicitar Asignación de Activos</DialogTitle>
-                <DialogDescription>
-                  Asigne nuevos activos a un empleado. El sistema validará el stock disponible.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="employee" className="text-right">Empleado</Label>
-                    <Select onValueChange={setSelectedEmployee} value={selectedEmployee} required>
-                        <SelectTrigger className="col-span-3">
-                            <SelectValue placeholder="Seleccione un empleado" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {employees.map(employee => (
-                                <SelectItem key={employee.id} value={employee.id!}>{employee.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="asset" className="text-right">Activo</Label>
-                   <Select onValueChange={setSelectedAsset} value={selectedAsset} required>
-                        <SelectTrigger className="col-span-3">
-                            <SelectValue placeholder="Seleccione un activo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {stockAssets.map(asset => (
-                                <SelectItem key={asset.id} value={asset.id!}>{asset.name} (Stock: {asset.stock || 0})</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="quantity" className="text-right">Cantidad</Label>
-                  <Input id="quantity" name="quantity" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} min="1" className="col-span-3" required/>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit">Enviar Solicitud</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+      <h1 className="text-lg font-semibold md:text-2xl mb-4">Panel del Master</h1>
+      <Tabs defaultValue="assignments" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="assignments">Asignaciones</TabsTrigger>
+          <TabsTrigger value="requests">Solicitudes</TabsTrigger>
+          <TabsTrigger value="users">Gestión de Usuarios</TabsTrigger>
+          <TabsTrigger value="assets">Gestión de Activos</TabsTrigger>
+        </TabsList>
 
-      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Autorizar Reposición de Activos</CardTitle>
-            <CardDescription>
-              Revise y apruebe o rechace las solicitudes de reposición pendientes.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Empleado</TableHead>
-                  <TableHead>Activo</TableHead>
-                  <TableHead>Motivo</TableHead>
-                  <TableHead>Justificación</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {replacementRequests.map((request) => (
-                  <TableRow key={request.id}>
-                    <TableCell>{request.employeeName}</TableCell>
-                    <TableCell>{request.assetName} ({request.serial})</TableCell>
-                    <TableCell>{request.reason}</TableCell>
-                    <TableCell>
-                      <a href={request.imageUrl} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">
-                        Ver Imagen <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </TableCell>
-                    <TableCell className="text-right">
+        <TabsContent value="assignments">
+          <Card>
+            <CardHeader>
+              <CardTitle>Crear Nueva Asignación Múltiple</CardTitle>
+              <CardDescription>Seleccione un empleado y añada los activos que desea asignar.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleBulkAssignmentSubmit}>
+                <div className="grid gap-6">
+                  <div>
+                    <Label htmlFor="employee-select">Seleccionar Empleado</Label>
+                    <Select onValueChange={setSelectedEmployee} value={selectedEmployee} required>
+                      <SelectTrigger id="employee-select">
+                        <SelectValue placeholder="Seleccione un empleado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employees.map(employee => (
+                          <SelectItem key={employee.id} value={employee.id!}>{employee.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <Label>Activos a Asignar</Label>
+                    {assignmentRows.map((row, index) => {
+                      const selectedAssetInfo = stockAssets.find(a => a.id === row.assetId);
+                      const stock = selectedAssetInfo?.stock || 0;
+                      const isStockAlert = row.quantity > stock;
+
+                      return (
+                        <div key={row.id} className="flex items-center gap-2 p-2 border rounded-lg">
+                          <Select onValueChange={(value) => handleAssignmentRowChange(row.id, 'assetId', value)} value={row.assetId}>
+                            <SelectTrigger className="flex-grow">
+                              <SelectValue placeholder="Seleccione un activo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {stockAssets.map(asset => (
+                                <SelectItem key={asset.id} value={asset.id!}>{asset.name} (Stock: {asset.stock || 0})</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            placeholder="Cant."
+                            min="1"
+                            value={row.quantity}
+                            onChange={(e) => handleAssignmentRowChange(row.id, 'quantity', parseInt(e.target.value, 10) || 1)}
+                            className={`w-24 ${isStockAlert ? 'border-destructive' : ''}`}
+                          />
+                          {isStockAlert && <AlertTriangle className="h-5 w-5 text-destructive" title={`Stock insuficiente. Disponible: ${stock}`} />}
+                          <Button variant="ghost" size="icon" onClick={() => removeAssignmentRow(row.id)} disabled={assignmentRows.length <= 1}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <Button type="button" variant="outline" onClick={addAssignmentRow}>Añadir Activo</Button>
+                    <Button type="submit">Crear Solicitudes</Button>
+                  </div>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="requests">
+          <Card>
+            <CardHeader>
+              <CardTitle>Autorizar Reposición de Activos</CardTitle>
+              <CardDescription>
+                Revise y apruebe o rechace las solicitudes de reposición pendientes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Empleado</TableHead>
+                    <TableHead>Activo</TableHead>
+                    <TableHead>Motivo</TableHead>
+                    <TableHead>Justificación</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {replacementRequests.map((request) => (
+                    <TableRow key={request.id}>
+                      <TableCell>{request.employeeName}</TableCell>
+                      <TableCell>{request.assetName} ({request.serial})</TableCell>
+                      <TableCell>{request.reason}</TableCell>
+                      <TableCell>
+                        <a href={request.imageUrl} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">
+                          Ver Imagen <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </TableCell>
+                      <TableCell className="text-right">
                         <div className="flex gap-2 justify-end">
                           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReplacementApproval(request.id!, 'aprobado')}>
                             <Check className="h-4 w-4 text-green-500" />
@@ -341,23 +371,25 @@ export default function MasterPage() {
                             <span className="sr-only">Rechazar</span>
                           </Button>
                         </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
+        <TabsContent value="users">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle>Gestión de Usuarios</CardTitle>
                 <CardDescription>
                   Invite y administre los usuarios del sistema.
                 </CardDescription>
               </div>
-               <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+              <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="gap-1">
                     <UserPlus className="h-4 w-4" />
@@ -397,9 +429,9 @@ export default function MasterPage() {
                   </form>
                 </DialogContent>
               </Dialog>
-          </CardHeader>
-          <CardContent>
-            <Table>
+            </CardHeader>
+            <CardContent>
+              <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nombre</TableHead>
@@ -420,25 +452,42 @@ export default function MasterPage() {
                       <TableCell>
                         <Badge variant={u.status === 'activo' ? 'success' : 'outline'}>{u.status}</Badge>
                       </TableCell>
-                       <TableCell className="text-right">
-                         <div className="flex gap-2 justify-end">
-                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleEditUserClick(u)}>
-                                <FilePenLine className="h-4 w-4" />
-                                <span className="sr-only">Editar</span>
-                            </Button>
-                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleDeleteUserClick(u)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                                <span className="sr-only">Eliminar</span>
-                            </Button>
-                         </div>
+                      <TableCell className="text-right">
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleEditUserClick(u)}>
+                            <FilePenLine className="h-4 w-4" />
+                            <span className="sr-only">Editar</span>
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleDeleteUserClick(u)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <span className="sr-only">Eliminar</span>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="assets">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Gestión de Activos y Kits</CardTitle>
+                    <CardDescription>
+                        Cree, edite, elimine y organice activos y kits de herramientas.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <p>Próximamente: Herramientas para la gestión de activos y la creación de kits.</p>
+                </CardContent>
+            </Card>
+        </TabsContent>
+
+      </Tabs>
+
 
       {/* Edit User Dialog */}
       <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
