@@ -66,11 +66,11 @@ export function AuthProvider({ children }) {
           // Re-fetch the (now updated) data to ensure UI has the latest info
           const updatedDoc = await getDoc(userDoc.ref);
           const updatedData = updatedDoc.data();
-          setUserData(updatedData);
+          setUserData({ id: updatedDoc.id, ...updatedData });
           setUserRole(updatedData.role || null);
         } else {
           // This is a normal active user
-          setUserData(currentData);
+          setUserData({ id: userDoc.id, ...currentData });
           setUserRole(currentData.role || null);
         }
       } else {

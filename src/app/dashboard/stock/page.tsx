@@ -158,6 +158,7 @@ export default function StockPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Referencia</TableHead>
                 <TableHead>Descripción</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Serial</TableHead>
@@ -172,6 +173,7 @@ export default function StockPage() {
               {inventory.length > 0 ? (
                 inventory.map(asset => (
                   <TableRow key={asset.id}>
+                    <TableCell>{asset.reference || 'N/A'}</TableCell>
                     <TableCell className="font-medium">{asset.name}</TableCell>
                     <TableCell>{formatAssetType(asset.tipo)}</TableCell>
                     <TableCell>{asset.serial || 'N/A'}</TableCell>
@@ -193,7 +195,7 @@ export default function StockPage() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={userData.role === 'master' ? 8 : 7} className="text-center">No hay activos en el inventario.</TableCell>
+                  <TableCell colSpan={userData.role === 'master' ? 9 : 8} className="text-center">No hay activos en el inventario.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -209,6 +211,10 @@ export default function StockPage() {
             <DialogDescription>Modifique los detalles del activo. Haga clic en guardar para aplicar los cambios.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUpdateAsset} className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="reference">Referencia</Label>
+              <Input id="reference" value={editFormData.reference || ''} onChange={handleFormChange} />
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="name">Descripción</Label>
               <Input id="name" value={editFormData.name || ''} onChange={handleFormChange} />
