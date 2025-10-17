@@ -1,3 +1,7 @@
+/**
+ * @file Este archivo contiene todos los servicios de la aplicación para interactuar con Firebase.
+ * Incluye la gestión de usuarios, logística, activos y más.
+ */
 
 import { db, storage } from './firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
@@ -77,6 +81,12 @@ export interface DevolutionProcess {
 
 // ------------------- USER MANAGEMENT -------------------
 
+/**
+ * Invita a un nuevo usuario al sistema.
+ * @param email - El correo electrónico del usuario a invitar.
+ * @param role - El rol asignado al usuario.
+ * @throws Si el correo electrónico ya ha sido invitado o registrado.
+ */
 export const inviteUser = async (email: string, role: Role): Promise<void> => {
   const q = query(collection(db, "users"), where("email", "==", email.toLowerCase()));
   const querySnapshot = await getDocs(q);
@@ -91,6 +101,11 @@ export const inviteUser = async (email: string, role: Role): Promise<void> => {
   });
 };
 
+/**
+ * Obtiene una lista de usuarios, opcionalmente filtrada por rol.
+ * @param roleFilter - El rol por el cual filtrar los usuarios.
+ * @returns Una promesa que se resuelve en un array de objetos de usuario.
+ */
 export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
   const usersRef = collection(db, "users");
   const q = roleFilter ? query(usersRef, where("role", "==", roleFilter)) : usersRef;
@@ -98,10 +113,19 @@ export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
 };
 
+/**
+ * Actualiza los datos de un usuario específico.
+ * @param userId - El ID del usuario a actualizar.
+ * @param updates - Un objeto con los campos a actualizar (nombre o rol).
+ */
 export const updateUser = async (userId: string, updates: Partial<Pick<User, 'name' | 'role'>>): Promise<void> => {
   await updateDoc(doc(db, "users", userId), updates);
 };
 
+/**
+ * Elimina un usuario del sistema.
+ * @param userId - El ID del usuario a eliminar.
+ */
 export const deleteUser = async (userId: string): Promise<void> => {
   await deleteDoc(doc(db, "users", userId));
 };
@@ -117,6 +141,10 @@ export type NewAssetData = {
   tipo: AssetType;
 };
 
+/**
+ * Agrega múltiples activos en un lote.
+ * @param assets - Un array de objetos con los datos de los nuevos activos.
+ */
 export const addAssetsInBatch = async (assets: NewAssetData[]): Promise<void> => {
   const batch = writeBatch(db);
 
@@ -128,6 +156,10 @@ export const addAssetsInBatch = async (assets: NewAssetData[]): Promise<void> =>
   await batch.commit();
 };
 
+/**
+ * Agrega un nuevo activo al inventario o actualiza el stock si ya existe.
+ * @param assetData - Los datos del activo a agregar.
+ */
 export const addAsset = async (assetData: { reference?: string; name: string; serial?: string; location?: string; stock: number; tipo: AssetType }): Promise<void> => {
   await runTransaction(db, async (transaction) => {
     const stockAssetsQuery = query(collection(db, "assets"), where("name", "==", assetData.name), where("status", "==", "en stock"));
@@ -144,22 +176,39 @@ export const addAsset = async (assetData: { reference?: string; name: string; se
   });
 };
 
+/**
+ * Obtiene todos los activos del inventario.
+ * @returns Una promesa que se resuelve en un array de objetos de activo.
+ */
 export const getInventory = async (): Promise<Asset[]> => {
   const assetsRef = collection(db, "assets");
   const querySnapshot = await getDocs(assetsRef);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
 };
 
+/**
+ * Actualiza los datos de un activo específico.
+ * @param assetId - El ID del activo a actualizar.
+ * @param data - Un objeto con los campos a actualizar.
+ */
 export const updateAsset = async (assetId: string, data: Partial<Asset>): Promise<void> => {
   const assetRef = doc(db, "assets", assetId);
   await updateDoc(assetRef, data);
 };
 
+/**
+ * Elimina un activo del inventario.
+ * @param assetId - El ID del activo a eliminar.
+ */
 export const deleteAsset = async (assetId: string): Promise<void> => {
   const assetRef = doc(db, "assets", assetId);
   await deleteDoc(assetRef);
 };
 
+/**
+ * Obtiene las solicitudes de asignación pendientes de envío.
+ * @returns Una promesa que se resuelve en un array de solicitudes de asignación.
+ */
 export const getAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
   const requestsRef = collection(db, "assignmentRequests");
   const q = query(requestsRef, where("status", "==", "pendiente de envío"));
@@ -167,12 +216,24 @@ export const getAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
 };
 
+/**
+ * Obtiene todas las solicitudes de asignación, independientemente de su estado.
+ * @returns Una promesa que se resuelve en un array de todas las solicitudes de asignación.
+ */
 export const getAllAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
   const requestsRef = collection(db, "assignmentRequests");
   const querySnapshot = await getDocs(requestsRef);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
 };
 
+/**
+ * Procesa una solicitud de asignación de activo.
+ * @param requestId - El ID de la solicitud a procesar.
+ * @param trackingNumber - El número de seguimiento del envío.
+ * @param carrier - La empresa de transporte.
+ * @param serialNumber - El número de serie del activo (si aplica).
+ * @throws Si la solicitud, el usuario o el activo no se encuentran, o si no hay stock suficiente.
+ */
 export const processAssignmentRequest = async (
   requestId: string, 
   trackingNumber: string, 
@@ -244,12 +305,22 @@ export const processAssignmentRequest = async (
   });
 };
 
+/**
+ * Obtiene los procesos de devolución iniciados.
+ * @returns Una promesa que se resuelve en un array de procesos de devolución.
+ */
 export const getDevolutionProcesses = async (): Promise<DevolutionProcess[]> => {
     const q = query(collection(db, "devolutionProcesses"), where("status", "==", "iniciado"));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DevolutionProcess));
 };
 
+/**
+ * Verifica la devolución de un activo como parte de un proceso de devolución.
+ * @param processId - El ID del proceso de devolución.
+ * @param assetId - El ID del activo a verificar.
+ * @throws Si el proceso de devolución no se encuentra.
+ */
 export const verifyAssetReturn = async (processId: string, assetId: string): Promise<void> => {
     await runTransaction(db, async (transaction) => {
         const processRef = doc(db, "devolutionProcesses", processId);
@@ -270,6 +341,11 @@ export const verifyAssetReturn = async (processId: string, assetId: string): Pro
     });
 };
 
+/**
+ * Completa un proceso de devolución si todos los activos han sido verificados.
+ * @param processId - El ID del proceso de devolución a completar.
+ * @throws Si el proceso no se encuentra o si no todos los activos han sido verificados.
+ */
 export const completeDevolutionProcess = async (processId: string): Promise<void> => {
     const processRef = doc(db, "devolutionProcesses", processId);
     const processDoc = await getDoc(processRef);
@@ -289,6 +365,10 @@ export const completeDevolutionProcess = async (processId: string): Promise<void
 
 // ------------------- MASTER SERVICES -------------------
 
+/**
+ * Obtiene los activos que están en stock y tienen una cantidad mayor que cero.
+ * @returns Una promesa que se resuelve en un array de activos en stock.
+ */
 export const getStockAssets = async (): Promise<Asset[]> => {
   const assetsRef = collection(db, "assets");
   const q = query(assetsRef, where("status", "==", "en stock"), where("stock", ">", 0));
@@ -296,6 +376,12 @@ export const getStockAssets = async (): Promise<Asset[]> => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
 };
 
+/**
+ * Envía una solicitud de asignación de activo.
+ * @param request - Los datos de la solicitud de asignación.
+ * @returns Una promesa que se resuelve en un objeto con el estado de la nueva solicitud.
+ * @throws Si el activo no se encuentra.
+ */
 export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id' | 'date' | 'status'>): Promise<{status: AssignmentStatus}> => {
   return await runTransaction(db, async (transaction) => {
     const assetRef = doc(db, "assets", request.assetId);
@@ -319,6 +405,10 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
   });
 };
 
+/**
+ * Envía múltiples solicitudes de asignación en un lote.
+ * @param requests - Un array de objetos de solicitud de asignación.
+ */
 export const sendBulkAssignmentRequests = async (
   requests: {
     employeeId: string;
@@ -345,28 +435,51 @@ export const sendBulkAssignmentRequests = async (
   await batch.commit();
 };
 
+/**
+ * Obtiene las solicitudes de reemplazo pendientes.
+ * @returns Una promesa que se resuelve en un array de solicitudes de reemplazo.
+ */
 export const getReplacementRequests = async (): Promise<ReplacementRequest[]> => {
   const q = query(collection(db, "replacementRequests"), where("status", "==", "pendiente"));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReplacementRequest));
 };
 
+/**
+ * Actualiza el estado de una solicitud de reemplazo.
+ * @param id - El ID de la solicitud de reemplazo a actualizar.
+ * @param status - El nuevo estado de la solicitud.
+ */
 export const updateReplacementRequestStatus = async (id: string, status: ReplacementStatus): Promise<void> => {
   await updateDoc(doc(db, "replacementRequests", id), { status });
 };
 
 // ------------------- EMPLOYEE SERVICES -------------------
 
+/**
+ * Obtiene todos los activos asignados a un empleado específico.
+ * @param employeeId - El ID del empleado.
+ * @returns Una promesa que se resuelve en un array de activos asignados.
+ */
 export const getMyAssignedAssets = async (employeeId: string): Promise<Asset[]> => {
   const q = query(collection(db, "assets"), where("employeeId", "==", employeeId));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
 };
 
+/**
+ * Confirma la recepción de un activo.
+ * @param assetId - El ID del activo a confirmar.
+ */
 export const confirmAssetReceipt = async (assetId: string): Promise<void> => {
   await updateDoc(doc(db, "assets", assetId), { status: 'activo' });
 };
 
+/**
+ * Rechaza la recepción de un activo.
+ * @param assetId - El ID del activo a rechazar.
+ * @param reason - La razón del rechazo.
+ */
 export const rejectAssetReceipt = async (assetId: string, reason: string): Promise<void> => {
   await updateDoc(doc(db, "assets", assetId), { 
     status: 'en disputa', 
@@ -374,12 +487,21 @@ export const rejectAssetReceipt = async (assetId: string, reason: string): Promi
   });
 };
 
+/**
+ * Obtiene un activo por su ID.
+ * @param assetId - El ID del activo a obtener.
+ * @returns Una promesa que se resuelve en el objeto del activo o null si no se encuentra.
+ */
 export const getAssetById = async (assetId: string): Promise<Asset | null> => {
   const docSnap = await getDoc(doc(db, "assets", assetId));
   if (!docSnap.exists()) return null;
   return { id: docSnap.id, ...docSnap.data() } as Asset;
 };
 
+/**
+ * Envía una solicitud de reemplazo de activo.
+ * @param requestData - Los datos de la solicitud, incluyendo opcionalmente un archivo de imagen.
+ */
 export const submitReplacementRequest = async (requestData: Omit<ReplacementRequest, 'id' | 'date' | 'status' | 'imageUrl'> & { imageFile?: File }): Promise<void> => {
   let imageUrl = '';
   if (requestData.imageFile) {
@@ -398,6 +520,12 @@ export const submitReplacementRequest = async (requestData: Omit<ReplacementRequ
   });
 };
 
+/**
+ * Inicia el proceso de devolución de todos los activos de un empleado.
+ * @param employeeId - El ID del empleado que inicia la devolución.
+ * @param employeeName - El nombre del empleado.
+ * @throws Si el empleado no tiene activos para devolver.
+ */
 export const initiateDevolutionProcess = async (employeeId: string, employeeName: string): Promise<void> => {
     const assetsToReturnQuery = query(collection(db, "assets"), where("employeeId", "==", employeeId), where("status", "==", "activo"));
     const assetsSnapshot = await getDocs(assetsToReturnQuery);

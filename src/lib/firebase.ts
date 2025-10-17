@@ -1,3 +1,9 @@
+/**
+ * @file Este archivo se encarga de la inicialización y configuración de Firebase.
+ *
+ * @see https://firebase.google.com/docs/web/setup
+ */
+
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
@@ -6,13 +12,13 @@ import { getAuth } from "firebase/auth"; // Import getAuth
 
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyB1ZM8tppg9wvPbVb-S_Tst3VdrzVmJR_4",
-  authDomain: "pruebasfijosdn1.firebaseapp.com",
-  projectId: "pruebasfijosdn1",
-  storageBucket: "pruebasfijosdn1.firebasestorage.app",
-  messagingSenderId: "1085419668125",
-  appId: "1:1085419668125:web:3c9e059953cdd953774a74",
-  measurementId: "G-S6EN39B1EX"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
