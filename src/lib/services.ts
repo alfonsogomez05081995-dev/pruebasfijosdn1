@@ -7,77 +7,18 @@ import { db, storage } from './firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDoc, Timestamp, runTransaction, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { v4 as uuidv4 } from 'uuid';
-
-// ------------------- TYPE DEFINITIONS -------------------
-
-export type Role = 'master' | 'master_it' | 'master_campo' | 'master_depot' | 'logistica' | 'empleado';
-
-export interface User {
-  id: string; 
-  uid?: string; 
-  name: string;
-  email: string;
-  role: Role;
-  status: 'invitado' | 'activo';
-}
-
-export type AssetStatus = 'activo' | 'recibido pendiente' | 'en devolución' | 'en stock' | 'baja' | 'en disputa';
-export type AssetType = 'equipo_computo' | 'herramienta_electrica' | 'herramienta_manual';
-
-export interface Asset {
-  id: string;
-  reference?: string;
-  name: string;
-  serial?: string;
-  location?: string;
-  status: AssetStatus;
-  tipo: AssetType;
-  stock?: number;
-  employeeId?: string;
-  employeeUid?: string; // Added for security rules
-  employeeName?: string;
-  assignedDate?: Timestamp;
-  rejectionReason?: string;
-}
-
-export type AssignmentStatus = 'pendiente de envío' | 'enviado' | 'pendiente por stock';
-export interface AssignmentRequest {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  assetId: string; 
-  assetName: string;
-  quantity: number;
-  date: Timestamp;
-  status: AssignmentStatus;
-  trackingNumber?: string;
-  carrier?: string;
-}
-
-export type ReplacementStatus = 'pendiente' | 'aprobado' | 'rechazado';
-export interface ReplacementRequest {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  assetId: string;
-  assetName: string;
-  serial: string;
-  reason: string;
-  justification: string;
-  imageUrl?: string;
-  date: Timestamp;
-  status: ReplacementStatus;
-}
-
-export type DevolutionStatus = 'iniciado' | 'verificado por logística' | 'completado';
-export interface DevolutionProcess {
-    id: string;
-    employeeId: string;
-    employeeName: string;
-    status: DevolutionStatus;
-    date: Timestamp;
-    assets: { id: string; name: string; serial?: string; verified: boolean }[];
-}
+import { 
+    Role, 
+    User, 
+    Asset, 
+    AssignmentRequest, 
+    ReplacementRequest, 
+    DevolutionProcess, 
+    NewAssetData, 
+    AssignmentStatus, 
+    ReplacementStatus,
+    AssetType
+} from './types';
 
 // ------------------- USER MANAGEMENT -------------------
 
@@ -154,15 +95,6 @@ export const deleteUser = async (userId: string): Promise<void> => {
 };
 
 // ------------------- LOGISTICS SERVICES -------------------
-
-export type NewAssetData = {
-  reference?: string;
-  name: string;
-  serial?: string;
-  location: string;
-  stock: number;
-  tipo: AssetType;
-};
 
 /**
  * Agrega múltiples activos en un lote.

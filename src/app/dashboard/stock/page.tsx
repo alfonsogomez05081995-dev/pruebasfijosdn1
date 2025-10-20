@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getStockAssets, Asset, updateAsset, deleteAsset } from '@/lib/services';
+import { getStockAssets, updateAsset, deleteAsset } from '@/lib/services';
+import { Asset } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
