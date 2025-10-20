@@ -16,10 +16,10 @@ import { Logo } from "@/components/logo";
 import { useAuth } from '../../contexts/AuthContext'; // Correct import
 
 const allNavItems = [
-    { href: "/dashboard", label: "Inicio", icon: Home, roles: ['master', 'logistica', 'empleado'] },
-    { href: "/dashboard/master", label: "Master", icon: Users, roles: ['master'] },
+    { href: "/dashboard", label: "Inicio", icon: Home, roles: ['master', 'master_it', 'master_campo', 'master_depot', 'logistica', 'empleado'] },
+    { href: "/dashboard/master", label: "Master", icon: Users, roles: ['master', 'master_it', 'master_campo', 'master_depot'] },
     { href: "/dashboard/logistica", label: "Logística", icon: Package, roles: ['master', 'logistica'] },
-    { href: "/dashboard/stock", label: "Inventario", icon: Warehouse, roles: ['master', 'logistica'] },
+    { href: "/dashboard/stock", label: "Inventario", icon: Warehouse, roles: ['master', 'master_it', 'master_campo', 'master_depot', 'logistica'] },
     { href: "/dashboard/empleado", label: "Empleado", icon: Wrench, roles: ['master', 'empleado'] },
 ];
 

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { getInventory, Asset, updateAsset, deleteAsset } from '@/lib/services';
+import { getStockAssets, Asset, updateAsset, deleteAsset } from '@/lib/services';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -33,21 +33,16 @@ export default function StockPage() {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<Asset>>({});
 
-  useEffect(() => {
-    if (!loading && (!userData || !['master', 'logistica'].includes(userData.role))) {
-      router.push('/dashboard'); // Redirect to a safe page if not authorized
-    }
-  }, [userData, loading, router]);
-
   const fetchInventory = useCallback(async () => {
+    if (!userData) return;
     try {
-      const assets = await getInventory();
+      const assets = await getStockAssets(userData.role);
       setInventory(assets);
     } catch (error) {
       console.error("Error fetching inventory:", error);
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar el inventario.' });
     }
-  }, [toast]);
+  }, [userData, toast]);
 
   useEffect(() => {
     if (userData) {
@@ -137,7 +132,7 @@ export default function StockPage() {
     return <div>Cargando...</div>;
   }
 
-  if (!['master', 'logistica'].includes(userData.role)) {
+  if (!userData.role.startsWith('master') && userData.role !== 'logistica') {
     return <div>Acceso no autorizado.</div>;
   }
 

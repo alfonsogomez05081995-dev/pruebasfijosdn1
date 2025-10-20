@@ -88,19 +88,23 @@ export default function MasterPage() {
 
 
   useEffect(() => {
-    if (!loading && (!userData || userData.role !== 'master')) {
+    if (!loading && (!userData || !userData.role.startsWith('master'))) {
       router.push('/');
     }
   }, [userData, loading, router]);
 
   const fetchAllData = useCallback(async () => {
+    if (!userData) return;
     try {
+      const isOriginalMaster = userData.role === 'master';
+  
       const [requests, fetchedEmployees, fetchedAssets, allSystemUsers] = await Promise.all([
         getReplacementRequests(),
-        getUsers('empleado'), 
-        getStockAssets(),
-        getUsers()
+        getUsers('empleado', isOriginalMaster ? undefined : userData.id),
+        getStockAssets(userData.role),
+        getUsers(undefined, isOriginalMaster ? undefined : userData.id)
       ]);
+  
       setReplacementRequests(requests);
       setEmployees(fetchedEmployees);
       setStockAssets(fetchedAssets);
@@ -109,7 +113,7 @@ export default function MasterPage() {
         console.error("Error fetching data:", error);
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudieron cargar los datos.' });
     }
-  }, [toast]);
+  }, [userData, toast]);
 
   useEffect(() => {
     if (userData) {
@@ -189,7 +193,7 @@ export default function MasterPage() {
       return;
     }
     try {
-      await inviteUser(newUserEmail, newUserRole);
+      await inviteUser(newUserEmail, newUserRole, userData.id);
       toast({ title: "Usuario Invitado", description: `Se ha enviado una invitación a ${newUserEmail}.` });
       setUserDialogOpen(false);
       setNewUserEmail('');
@@ -254,11 +258,13 @@ export default function MasterPage() {
     <>
       <h1 className="text-lg font-semibold md:text-2xl mb-4">Panel del Master</h1>
       <Tabs defaultValue="assignments" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className={`grid w-full ${userData.role === 'master' ? 'grid-cols-4' : 'grid-cols-3'}`}>
           <TabsTrigger value="assignments">Asignaciones</TabsTrigger>
           <TabsTrigger value="requests">Solicitudes</TabsTrigger>
           <TabsTrigger value="users">Gestión de Usuarios</TabsTrigger>
-          <TabsTrigger value="assets">Gestión de Activos</TabsTrigger>
+          {userData.role === 'master' && (
+            <TabsTrigger value="assets">Gestión de Activos</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="assignments">
@@ -419,6 +425,9 @@ export default function MasterPage() {
                             <SelectItem value="empleado">Empleado</SelectItem>
                             <SelectItem value="logistica">Logística</SelectItem>
                             <SelectItem value="master">Master</SelectItem>
+                            <SelectItem value="master_it">Master IT</SelectItem>
+                            <SelectItem value="master_campo">Master Campo</SelectItem>
+                            <SelectItem value="master_depot">Master Depot</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -447,7 +456,7 @@ export default function MasterPage() {
                       <TableCell>{u.name}</TableCell>
                       <TableCell>{u.email}</TableCell>
                       <TableCell>
-                        <Badge variant={u.role === 'master' ? 'default' : 'secondary'}>{u.role}</Badge>
+                        <Badge variant={u.role.startsWith('master') ? 'default' : 'secondary'}>{u.role}</Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant={u.status === 'activo' ? 'success' : 'outline'}>{u.status}</Badge>
@@ -518,6 +527,9 @@ export default function MasterPage() {
                                   <SelectItem value="empleado">Empleado</SelectItem>
                                   <SelectItem value="logistica">Logística</SelectItem>
                                   <SelectItem value="master">Master</SelectItem>
+                                  <SelectItem value="master_it">Master IT</SelectItem>
+                                  <SelectItem value="master_campo">Master Campo</SelectItem>
+                                  <SelectItem value="master_depot">Master Depot</SelectItem>
                               </SelectContent>
                           </Select>
                       </div>

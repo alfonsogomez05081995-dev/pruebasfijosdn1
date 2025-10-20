@@ -20,7 +20,7 @@ const allRoles = [
       description: "Asigne activos y autorice reposiciones.",
       icon: Users,
       href: "/dashboard/master",
-      roles: ['master']
+      roles: ['master', 'master_it', 'master_campo', 'master_depot']
     },
     {
       name: "Logística",
@@ -41,6 +41,11 @@ const allRoles = [
 export default function Dashboard() {
   const auth = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    // DEBUG: Log the project ID to verify environment variables are loaded.
+    console.log("DEBUG: Project ID from env is:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
+  }, []);
 
   useEffect(() => {
     if (auth && !auth.loading && !auth.currentUser) {

@@ -4,13 +4,13 @@
  */
 
 import { db, storage } from './firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDoc, Timestamp, runTransaction, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { v4 as uuidv4 } from 'uuid';
 
 // ------------------- TYPE DEFINITIONS -------------------
 
-export type Role = 'master' | 'logistica' | 'empleado';
+export type Role = 'master' | 'master_it' | 'master_campo' | 'master_depot' | 'logistica' | 'empleado';
 
 export interface User {
   id: string; 
@@ -82,33 +82,56 @@ export interface DevolutionProcess {
 // ------------------- USER MANAGEMENT -------------------
 
 /**
- * Invita a un nuevo usuario al sistema.
- * @param email - El correo electrónico del usuario a invitar.
- * @param role - El rol asignado al usuario.
- * @throws Si el correo electrónico ya ha sido invitado o registrado.
+ * Creates an invitation document in the 'invitations' collection.
+ * @param email - The email of the user to invite.
+ * @param role - The role assigned to the user.
+ * @param inviterId - The ID of the user making the invitation.
+ * @throws If the email is already registered or already invited.
  */
-export const inviteUser = async (email: string, role: Role): Promise<void> => {
-  const q = query(collection(db, "users"), where("email", "==", email.toLowerCase()));
-  const querySnapshot = await getDocs(q);
-  if (!querySnapshot.empty) {
-    throw new Error(`El correo '${email}' ya ha sido invitado o registrado.`);
+export const inviteUser = async (email: string, role: Role, inviterId: string): Promise<void> => {
+  const lowerCaseEmail = email.toLowerCase();
+
+  // 1. Check if user already exists in the main users collection
+  const usersQuery = query(collection(db, "users"), where("email", "==", lowerCaseEmail));
+  const usersSnapshot = await getDocs(usersQuery);
+  if (!usersSnapshot.empty) {
+    throw new Error(`El correo '${lowerCaseEmail}' ya está registrado en el sistema.`);
   }
-  await addDoc(collection(db, "users"), {
-    email: email.toLowerCase(),
+
+  // 2. Check if an invitation already exists
+  const invitationRef = doc(db, "invitations", lowerCaseEmail);
+  const invitationSnap = await getDoc(invitationRef);
+  if (invitationSnap.exists()) {
+    throw new Error(`El correo '${lowerCaseEmail}' ya ha sido invitado.`);
+  }
+
+  // 3. Create the invitation document with the email as the ID
+  await setDoc(invitationRef, {
     role: role,
-    status: 'invitado',
-    name: 'Usuario Pendiente',
+    invitedBy: inviterId,
+    createdAt: Timestamp.now(),
   });
 };
 
 /**
- * Obtiene una lista de usuarios, opcionalmente filtrada por rol.
+ * Obtiene una lista de usuarios, opcionalmente filtrada por rol y/o por quién los invitó.
  * @param roleFilter - El rol por el cual filtrar los usuarios.
+ * @param inviterId - El ID del usuario que invitó para filtrar los resultados.
  * @returns Una promesa que se resuelve en un array de objetos de usuario.
  */
-export const getUsers = async (roleFilter?: Role): Promise<User[]> => {
+export const getUsers = async (roleFilter?: Role, inviterId?: string): Promise<User[]> => {
   const usersRef = collection(db, "users");
-  const q = roleFilter ? query(usersRef, where("role", "==", roleFilter)) : usersRef;
+  const queryConstraints = [];
+
+  if (roleFilter) {
+    queryConstraints.push(where("role", "==", roleFilter));
+  }
+
+  if (inviterId) {
+    queryConstraints.push(where("invitedBy", "==", inviterId));
+  }
+
+  const q = queryConstraints.length > 0 ? query(usersRef, ...queryConstraints) : usersRef;
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
 };
@@ -366,12 +389,32 @@ export const completeDevolutionProcess = async (processId: string): Promise<void
 // ------------------- MASTER SERVICES -------------------
 
 /**
- * Obtiene los activos que están en stock y tienen una cantidad mayor que cero.
+ * Obtiene los activos que están en stock y tienen una cantidad mayor que cero, filtrados por el rol del master.
+ * @param role El rol del usuario que realiza la solicitud.
  * @returns Una promesa que se resuelve en un array de activos en stock.
  */
-export const getStockAssets = async (): Promise<Asset[]> => {
+export const getStockAssets = async (role: Role): Promise<Asset[]> => {
   const assetsRef = collection(db, "assets");
-  const q = query(assetsRef, where("status", "==", "en stock"), where("stock", ">", 0));
+  let q;
+
+  const baseQueryConstraints = [where("status", "==", "en stock"), where("stock", ">", 0)];
+
+  switch (role) {
+    case 'master_it':
+      q = query(assetsRef, ...baseQueryConstraints, where("tipo", "==", "equipo_computo"));
+      break;
+    case 'master_campo':
+    case 'master_depot':
+      q = query(assetsRef, ...baseQueryConstraints, where("tipo", "in", ["herramienta_electrica", "herramienta_manual"]));
+      break;
+    case 'master':
+      q = query(assetsRef, ...baseQueryConstraints);
+      break;
+    default:
+      // For any other role, return an empty array as they should not be accessing this master-level data.
+      return [];
+  }
+
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
 };
