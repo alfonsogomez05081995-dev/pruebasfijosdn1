@@ -1,6 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // WARNING: This rule makes the 'users' collection publicly readable.
+    // This is necessary to check for an invitation before a user is created,
+    // but it exposes the list of invited (and registered) emails.
+    match /users/{userDocId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // All other documents require authentication. This rule will not apply
+    // to the 'users' collection because the one above is more specific.
     match /{document=**} {
       allow read, write: if request.auth != null;
     }

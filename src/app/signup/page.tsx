@@ -8,9 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, query, where, getDocs, writeBatch } from "firebase/firestore";
-import { db } from '@/lib/firebase';
+import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { getFirestore, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
+import { app } from '@/lib/firebase'; // Ensure you have a firebase app export
 
 export default function SignupPage() {
   const router = useRouter();
@@ -24,34 +24,33 @@ export default function SignupPage() {
     event.preventDefault();
     setLoading(true);
 
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
     try {
-      // 1. Check for invitation
+      // 1. Check for an invitation in Firestore
       const usersRef = collection(db, "users");
-      const q = query(usersRef, where("email", "==", email.toLowerCase()));
+      const q = query(usersRef, where("email", "==", email.toLowerCase()), where("status", "==", "invitado"));
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
-        throw new Error("No estás autorizado para registrarte. Contacta a un administrador.");
+        throw new Error("No estás autorizado para registrarte o el correo ya fue usado. Contacta a un administrador.");
       }
 
-      const userDoc = querySnapshot.docs[0];
-      const userData = userDoc.data();
-
-      if (userData.status !== 'invitado') {
-        throw new Error("Este correo ya ha sido registrado.");
-      }
-
-      // 2. Create user in Firebase Auth
-      const auth = getAuth();
+      // 2. Create the user in Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // 3. Update user document in Firestore
+      // Update Firebase Auth profile
+      await updateProfile(user, { displayName: name });
+
+      // 3. Update the user document in Firestore
+      const userDoc = querySnapshot.docs[0]; // Get the invitation document
       const batch = writeBatch(db);
       batch.update(userDoc.ref, {
         name: name,
         uid: user.uid,
-        status: 'activo'
+        status: "activo",
       });
       await batch.commit();
 
@@ -60,7 +59,13 @@ export default function SignupPage() {
 
     } catch (error: any) {
       console.error("Error en el registro:", error);
-      toast({ variant: "destructive", title: "Error en el registro", description: error.message });
+      let errorMessage = error.message;
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "Este correo electrónico ya está en uso.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "La contraseña debe tener al menos 6 caracteres.";
+      }
+      toast({ variant: "destructive", title: "Error en el registro", description: errorMessage });
     } finally {
       setLoading(false);
     }
