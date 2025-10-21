@@ -1,17 +1,43 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // WARNING: This rule makes the 'users' collection publicly readable.
-    // This is necessary to check for an invitation before a user is created,
-    // but it exposes the list of invited (and registered) emails.
-    match /users/{userDocId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    // Reglas para la colección 'users'
+    match /users/{userId} {
+      // Solo usuarios autenticados pueden leer perfiles.
+      allow read: if request.auth != null;
+
+      // Permitir la creación de un usuario si está autenticado (recién registrado),
+      // su UID coincide con el del documento a crear, y existe una invitación para su email.
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.uid
+                    && exists(/databases/$(database)/documents/invitations/$(request.resource.data.email));
+
+      // Un usuario puede actualizar su propio documento.
+      allow update: if request.auth.uid == userId;
+
+      // Solo un 'master' puede eliminar usuarios.
+      allow delete: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
     }
 
-    // All other documents require authentication. This rule will not apply
-    // to the 'users' collection because the one above is more specific.
+    // Reglas para la colección 'invitations'
+    match /invitations/{email} {
+      // Permitir 'get' a no autenticados (para registro) Y a usuarios master.
+      allow get: if request.auth == null || (request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master');
+
+      // Permitir 'list' (leer la colección) solo a usuarios master.
+      allow list: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
+
+      // Permitir a un usuario autenticado eliminar su propia invitación durante el registro.
+      allow delete: if request.auth != null && request.auth.token.email == email;
+
+      // Permitir a un master crear invitaciones.
+      allow create: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
+    }
+
+    // Reglas para el resto de las colecciones
     match /{document=**} {
+      // Requerir autenticación para todas las demás operaciones.
       allow read, write: if request.auth != null;
     }
   }

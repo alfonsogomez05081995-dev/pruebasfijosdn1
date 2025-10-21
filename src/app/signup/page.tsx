@@ -9,8 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { getFirestore, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
-import { app } from '@/lib/firebase'; // Ensure you have a firebase app export
+import { getFirestore, doc, getDoc, writeBatch, collection, serverTimestamp } from "firebase/firestore";
+import { app } from '@/lib/firebase';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -26,45 +26,63 @@ export default function SignupPage() {
 
     const auth = getAuth(app);
     const db = getFirestore(app);
+    const lowerCaseEmail = email.toLowerCase();
 
     try {
-      // 1. Check for an invitation in Firestore
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("email", "==", email.toLowerCase()), where("status", "==", "invitado"));
-      const querySnapshot = await getDocs(q);
+      // 1. Check for a valid invitation in the 'invitations' collection
+      const invitationRef = doc(db, "invitations", lowerCaseEmail);
+      const invitationSnap = await getDoc(invitationRef);
 
-      if (querySnapshot.empty) {
-        throw new Error("No estás autorizado para registrarte o el correo ya fue usado. Contacta a un administrador.");
+      if (!invitationSnap.exists()) {
+        throw new Error("No estás autorizado para registrarte, la invitación no es válida o ya fue usada. Contacta a un administrador.");
       }
+      
+      const { role, invitedBy } = invitationSnap.data();
 
       // 2. Create the user in Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Update Firebase Auth profile
+      // Update Firebase Auth profile display name
       await updateProfile(user, { displayName: name });
 
-      // 3. Update the user document in Firestore
-      const userDoc = querySnapshot.docs[0]; // Get the invitation document
+      // 3. Use a batch write to create the new user document and delete the invitation atomically
       const batch = writeBatch(db);
-      batch.update(userDoc.ref, {
-        name: name,
+
+      // Create a new document reference in the 'users' collection
+      const newUserRef = doc(collection(db, "users"));
+
+      // Set the data for the new user document
+      batch.set(newUserRef, {
         uid: user.uid,
+        name: name,
+        email: lowerCaseEmail,
+        role: role,
+        invitedBy: invitedBy, // <-- Ensure this is saved
         status: "activo",
+        createdAt: serverTimestamp(),
       });
+
+      // Delete the used invitation document
+      batch.delete(invitationRef);
+
+      // Commit the atomic batch write
       await batch.commit();
 
-      toast({ title: "¡Registro Exitoso!", description: "Ahora puedes iniciar sesión." });
+      toast({ title: "¡Registro Exitoso!", description: "Tu cuenta ha sido creada. Ahora puedes iniciar sesión." });
       router.push('/'); // Redirect to login page
 
     } catch (error: any) {
       console.error("Error en el registro:", error);
       let errorMessage = error.message;
       if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "Este correo electrónico ya está en uso.";
+        errorMessage = "Este correo electrónico ya está en uso por otra cuenta.";
       } else if (error.code === 'auth/weak-password') {
         errorMessage = "La contraseña debe tener al menos 6 caracteres.";
+      } else if (!error.message.startsWith("No estás autorizado")) {
+        errorMessage = "Ocurrió un error inesperado durante el registro.";
       }
+      
       toast({ variant: "destructive", title: "Error en el registro", description: errorMessage });
     } finally {
       setLoading(false);
@@ -75,9 +93,9 @@ export default function SignupPage() {
     <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
       <Card className="mx-auto max-w-sm">
         <CardHeader>
-          <CardTitle className="text-2xl">Registro</CardTitle>
+          <CardTitle className="text-2xl">Completar Registro</CardTitle>
           <CardDescription>
-            Completa tus datos para crear tu cuenta. Debes haber sido invitado por un administrador.
+            Crea tu contraseña para activar tu cuenta. Debes haber recibido una invitación.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -95,7 +113,7 @@ export default function SignupPage() {
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Registrando...' : 'Crear Cuenta'}
+              {loading ? 'Creando cuenta...' : 'Finalizar Registro'}
             </Button>
           </form>
           <div className="mt-4 text-center text-sm">

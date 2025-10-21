@@ -132,32 +132,35 @@ export const addAsset = async (assetData: { reference?: string; name: string; se
 };
 
 /**
- * Obtiene todos los activos del inventario.
+ * Obtiene todos los activos del inventario, aplicando filtros según el rol del usuario.
+ * @param userRole El rol del usuario que realiza la solicitud.
  * @returns Una promesa que se resuelve en un array de objetos de activo.
  */
-export const getInventoryItems = async (userRole) => {
-  let inventoryCollection = collection(db, "inventory");
+export const getInventoryItems = async (userRole: Role): Promise<Asset[]> => {
+  const assetsRef = collection(db, "assets"); // Corregido: usar la colección "assets"
   let q;
 
+  // La lógica de filtrado ahora es idéntica a getStockAssets para consistencia.
   switch (userRole) {
     case "Master IT":
-      q = query(inventoryCollection, where("category", "==", "Equipo De Computo"));
+      q = query(assetsRef, where("tipo", "==", "equipo_computo"));
       break;
     case "Master Campo":
     case "Master Depot":
-      q = query(inventoryCollection, where("category", "in", ["Herramienta Electrica", "Herramienta Manual"]));
+      q = query(assetsRef, where("tipo", "in", ["herramienta_electrica", "herramienta_manual"]));
       break;
+    case "Logistica":
     case "Master":
-      q = query(inventoryCollection);
+      // Los roles Master y Logistica pueden ver todos los activos sin filtrar por categoría.
+      q = query(assetsRef);
       break;
     default:
-      // For other roles or if no role is provided, return an empty array
+      // Para cualquier otro rol, o si no se proporciona un rol, devuelve un array vacío.
       return [];
   }
 
   const querySnapshot = await getDocs(q);
-  const items = querySnapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
-  return items;
+  return querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Asset));
 };
 
 /**
