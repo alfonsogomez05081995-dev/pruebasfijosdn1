@@ -30,7 +30,7 @@ export default function DashboardLayout({
 }) {
   const auth = useAuth(); // Use real hook
 
-  const navItems = allNavItems.filter(item => auth && auth.userRole && item.roles.includes(auth.userRole));
+  const navItems = allNavItems.filter(item => auth && auth.userData && auth.userData.role && item.roles.includes(auth.userData.role));
 
   return (
     <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">

@@ -28,12 +28,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PackagePlus, Send, CheckCheck, Upload } from "lucide-react";
+import { PackagePlus, Send, CheckCheck, Upload, AlertTriangle, Archive } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback, ChangeEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { addAsset, addAssetsInBatch, getAssignmentRequests, getAllAssignmentRequests, processAssignmentRequest, getDevolutionProcesses, verifyAssetReturn, completeDevolutionProcess, AssignmentRequest, AssetType, DevolutionProcess, NewAssetData } from "@/lib/services";
+import { 
+    addAsset, 
+    addAssetsInBatch, 
+    getAssignmentRequestsForLogistics, 
+    getAllAssignmentRequests, 
+    processAssignmentRequest, 
+    getDevolutionProcesses, 
+    verifyAssetReturn, 
+    completeDevolutionProcess, 
+    retryAssignment, 
+    archiveAssignment, 
+    AssignmentRequest, 
+    AssetType, 
+    DevolutionProcess, 
+    NewAssetData 
+} from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as XLSX from 'xlsx';
 
@@ -45,24 +60,25 @@ export default function LogisticaPage() {
   const [devolutionProcesses, setDevolutionProcesses] = useState<DevolutionProcess[]>([]);
   const [requestHistory, setRequestHistory] = useState<AssignmentRequest[]>([]);
 
-  // State for Add Asset form
+  // Form states
   const [assetReference, setAssetReference] = useState('');
   const [assetSerial, setAssetSerial] = useState('');
   const [assetName, setAssetName] = useState('');
   const [assetLocation, setAssetLocation] = useState('');
   const [assetStock, setAssetStock] = useState('');
   const [assetType, setAssetType] = useState<AssetType | ''| undefined>('');
-
-  // State for Bulk Upload
   const [bulkFile, setBulkFile] = useState<File | null>(null);
 
-  // State for Process Request Modal
+  // Modal states
   const [showProcessModal, setShowProcessModal] = useState(false);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<AssignmentRequest | null>(null);
   const [trackingNumber, setTrackingNumber] = useState('');
   const [carrier, setCarrier] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
-  
+  const [archiveReason, setArchiveReason] = useState('');
+
+
   useEffect(() => {
     if (!loading && (!userData || !['master', 'logistica'].includes(userData.role))) {
       router.push('/');
@@ -72,9 +88,9 @@ export default function LogisticaPage() {
   const fetchAllData = useCallback(async () => {
     try {
         const [assignRequests, devProcesses, allRequests] = await Promise.all([
-            getAssignmentRequests(), // This gets pending requests
+            getAssignmentRequestsForLogistics(),
             getDevolutionProcesses(),
-            getAllAssignmentRequests(), // This gets all requests for history
+            getAllAssignmentRequests(),
         ]);
         setAssignmentRequests(assignRequests);
         setDevolutionProcesses(devProcesses);
@@ -114,39 +130,71 @@ export default function LogisticaPage() {
         setAssetType('');
         setAssetStock('');
         setAssetLocation('');
-        fetchAllData(); // Refresh data
+        fetchAllData();
     } catch (error: any) {
         console.error("Error adding asset:", error);
         toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo agregar el activo." });
     }
   };
 
-  const handleOpenProcessModal = (requestId: string) => {
-    setSelectedRequestId(requestId);
+  const handleOpenProcessModal = (request: AssignmentRequest) => {
+    setSelectedRequest(request);
     setShowProcessModal(true);
-    // Clear previous values
     setTrackingNumber('');
     setCarrier('');
     setSerialNumber('');
   };
 
+  const handleOpenRejectionModal = (request: AssignmentRequest) => {
+    setSelectedRequest(request);
+    setShowRejectionModal(true);
+    setArchiveReason('');
+  };
+
   const handleProcessSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedRequestId || !trackingNumber || !carrier) {
+    if (!selectedRequest || !trackingNumber || !carrier) {
         toast({ variant: "destructive", title: "Error", description: "La transportadora y el número de guía son obligatorios." });
         return;
     }
     try {
-        // The backend will validate if the serial is needed
-        await processAssignmentRequest(selectedRequestId, trackingNumber, carrier, serialNumber);
-        toast({ title: "Solicitud Procesada", description: "La solicitud ha sido actualizada y el activo asignado." });
+        if (selectedRequest.status === 'rechazado') {
+            await retryAssignment(selectedRequest.id, trackingNumber, carrier, serialNumber);
+            toast({ title: "Reenvío Procesado", description: "La solicitud ha sido actualizada y marcada como 'enviado' nuevamente." });
+        } else {
+            await processAssignmentRequest(selectedRequest.id, trackingNumber, carrier, serialNumber);
+            toast({ title: "Solicitud Procesada", description: "La solicitud ha sido actualizada y el activo asignado." });
+        }
         setShowProcessModal(false);
         fetchAllData();
     } catch (error: any) {
-        console.error("Error processing request with tracking:", error);
+        console.error("Error processing request:", error);
         toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo procesar la solicitud." });
     }
   };
+
+  const handleRetrySubmit = () => {
+    if (!selectedRequest) return;
+    setShowRejectionModal(false);
+    handleOpenProcessModal(selectedRequest);
+  };
+
+  const handleArchiveSubmit = async () => {
+    if (!selectedRequest || !archiveReason) {
+        toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo para archivar." });
+        return;
+    }
+    try {
+        await archiveAssignment(selectedRequest.id, archiveReason);
+        toast({ title: "Solicitud Archivada", description: "La solicitud ha sido archivada y eliminada de la lista de pendientes." });
+        setShowRejectionModal(false);
+        fetchAllData();
+    } catch (error: any) {
+        console.error("Error archiving request:", error);
+        toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo archivar la solicitud." });
+    }
+  };
+
 
   const handleVerifyReturn = async (processId: string, assetId: string) => {
     try {
@@ -192,12 +240,10 @@ export default function LogisticaPage() {
         }
 
         let rows: any[][];
-        // Check if the file is likely a text file (CSV/TSV)
         if (bulkFile.type.startsWith("text/") || bulkFile.name.endsWith('.csv') || bulkFile.name.endsWith('.tsv')) {
             const text = new TextDecoder("utf-8").decode(fileContent as ArrayBuffer);
-            // Simple parser for TSV, handles tab delimiters
             rows = text.split('\n').map(line => line.trim().split('\t')).filter(row => row.length > 1 || (row.length === 1 && row[0] !== ''));
-        } else { // Assume Excel file
+        } else { 
             const workbook = XLSX.read(fileContent, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
@@ -242,7 +288,7 @@ export default function LogisticaPage() {
 
           const tipoDeActivoRaw = row[indexMap['tipo de activo']];
           const tipo = normalizeString(tipoDeActivoRaw).replace(/ /g, '_') as AssetType;
-          const serial = row[indexMap.serial] || ""; // Ensure serial is a string
+          const serial = row[indexMap.serial] || "";
           const cantidadStr = row[indexMap.cantidad];
           const cantidad = parseInt(cantidadStr, 10);
 
@@ -388,7 +434,7 @@ export default function LogisticaPage() {
           <Card className="mt-6">
             <CardHeader>
               <CardTitle>Solicitudes de Asignación</CardTitle>
-              <CardDescription>Procese las solicitudes de asignación pendientes.</CardDescription>
+              <CardDescription>Procese las solicitudes de asignación pendientes y resuelva las rechazadas.</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -408,12 +454,17 @@ export default function LogisticaPage() {
                       <TableCell>{req.assetName}</TableCell>
                       <TableCell>{req.quantity}</TableCell>
                       <TableCell>
-                        <Badge variant={req.status === 'pendiente de envío' ? 'warning' : 'outline'}>{req.status}</Badge>
+                        <Badge variant={req.status === 'pendiente de envío' ? 'warning' : req.status === 'rechazado' ? 'destructive' : 'outline'}>{req.status}</Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         {req.status === 'pendiente de envío' && (
-                          <Button size="sm" onClick={() => handleOpenProcessModal(req.id)}>
+                          <Button size="sm" onClick={() => handleOpenProcessModal(req)}>
                             <Send className="h-4 w-4 mr-2" /> Procesar Envío
+                          </Button>
+                        )}
+                        {req.status === 'rechazado' && (
+                          <Button variant="destructive" size="sm" onClick={() => handleOpenRejectionModal(req)}>
+                            <AlertTriangle className="h-4 w-4 mr-2" /> Resolver Rechazo
                           </Button>
                         )}
                       </TableCell>
@@ -503,7 +554,8 @@ export default function LogisticaPage() {
                       <TableCell>
                         <Badge variant={
                           req.status === 'enviado' ? 'default' :
-                          req.status === 'pendiente de envío' ? 'warning' : 'outline'
+                          req.status === 'pendiente de envío' ? 'warning' : 
+                          req.status === 'rechazado' ? 'destructive' : 'outline'
                         }>{req.status}</Badge>
                       </TableCell>
                       <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
@@ -517,52 +569,27 @@ export default function LogisticaPage() {
         </TabsContent>
       </Tabs>
 
+      {/* Process & Retry Modal */}
       <Dialog open={showProcessModal} onOpenChange={setShowProcessModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Procesar Envío de Solicitud</DialogTitle>
+            <DialogTitle>{selectedRequest?.status === 'rechazado' ? 'Reintentar Envío' : 'Procesar Envío de Solicitud'}</DialogTitle>
             <DialogDescription>
-              Ingrese los detalles de envío. El serial es obligatorio para equipos de cómputo y herramientas eléctricas.
+              Ingrese los nuevos detalles de envío. El serial es obligatorio para equipos de cómputo y herramientas eléctricas.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleProcessSubmit} className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="carrier" className="text-right">
-                Transportadora
-              </Label>
-              <Input
-                id="carrier"
-                value={carrier}
-                onChange={(e) => setCarrier(e.target.value)}
-                className="col-span-3"
-                placeholder="Ej: Servientrega"
-                required
-              />
+              <Label htmlFor="carrier" className="text-right">Transportadora</Label>
+              <Input id="carrier" value={carrier} onChange={(e) => setCarrier(e.target.value)} className="col-span-3" placeholder="Ej: Servientrega" required />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="trackingNumber" className="text-right">
-                Número de Guía
-              </Label>
-              <Input
-                id="trackingNumber"
-                value={trackingNumber}
-                onChange={(e) => setTrackingNumber(e.target.value)}
-                className="col-span-3"
-                placeholder="Ej: 0123456789"
-                required
-              />
+              <Label htmlFor="trackingNumber" className="text-right">Número de Guía</Label>
+              <Input id="trackingNumber" value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} className="col-span-3" placeholder="Ej: 0123456789" required />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="serialNumber" className="text-right">
-                Serial (si aplica)
-              </Label>
-              <Input
-                id="serialNumber"
-                value={serialNumber}
-                onChange={(e) => setSerialNumber(e.target.value)}
-                className="col-span-3"
-                placeholder="Ingrese el serial del equipo"
-              />
+              <Label htmlFor="serialNumber" className="text-right">Serial (si aplica)</Label>
+              <Input id="serialNumber" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="col-span-3" placeholder="Ingrese el serial del equipo" />
             </div>
             <DialogFooter>
               <Button type="submit">Confirmar Envío</Button>
@@ -570,6 +597,33 @@ export default function LogisticaPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Resolve Rejection Modal */}
+      <Dialog open={showRejectionModal} onOpenChange={setShowRejectionModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resolver Solicitud Rechazada</DialogTitle>
+            <DialogDescription>
+              El empleado rechazó la entrega de <strong>{selectedRequest?.assetName}</strong>.
+              Motivo: <span className="font-semibold">{selectedRequest?.rejectionReason || 'No especificado'}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">Puede reintentar el envío (posiblemente con un activo o serial diferente) o archivar la solicitud si no se puede completar.</p>
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <div className="flex gap-2">
+                <Input type="text" placeholder="Motivo para archivar..." value={archiveReason} onChange={(e) => setArchiveReason(e.target.value)} />
+                <Button type="button" variant="destructive" onClick={handleArchiveSubmit} disabled={!archiveReason}>
+                    <Archive className="h-4 w-4 mr-2" />
+                    Archivar
+                </Button>
+            </div>
+            <Button type="button" onClick={handleRetrySubmit}>Reintentar Envío</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </>
   );
 }

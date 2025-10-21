@@ -14,7 +14,7 @@ export interface User {
 }
 
 export type AssetStatus = 'activo' | 'recibido pendiente' | 'en devolución' | 'en stock' | 'baja' | 'en disputa';
-export type AssetType = 'equipo_computo' | 'herramienta_electrica' | 'herramienta_manual';
+export type AssetType = 'equipo_de_computo' | 'herramienta_electrica' | 'herramienta_manual';
 
 export interface Asset {
   id: string;

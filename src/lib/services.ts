@@ -142,11 +142,11 @@ export const getInventoryItems = async (userRole: Role): Promise<Asset[]> => {
 
   // La lógica de filtrado ahora es idéntica a getStockAssets para consistencia.
   switch (userRole) {
-    case "Master IT":
-      q = query(assetsRef, where("tipo", "==", "equipo_computo"));
+    case "master_it":
+      q = query(assetsRef, where("tipo", "==", "equipo_de_computo"));
       break;
-    case "Master Campo":
-    case "Master Depot":
+    case "master_campo":
+    case "master_depot":
       q = query(assetsRef, where("tipo", "in", ["herramienta_electrica", "herramienta_manual"]));
       break;
     case "Logistica":
@@ -183,15 +183,17 @@ export const deleteAsset = async (assetId: string): Promise<void> => {
 };
 
 /**
- * Obtiene las solicitudes de asignación pendientes de envío.
+ * Obtiene las solicitudes de asignación para el panel de logística.
+ * Incluye solicitudes pendientes de envío y las que han sido rechazadas.
  * @returns Una promesa que se resuelve en un array de solicitudes de asignación.
  */
-export const getAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
+export const getAssignmentRequestsForLogistics = async (): Promise<AssignmentRequest[]> => {
   const requestsRef = collection(db, "assignmentRequests");
-  const q = query(requestsRef, where("status", "==", "pendiente de envío"));
+  const q = query(requestsRef, where("status", "in", ["pendiente de envío", "rechazado"]));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
 };
+
 
 /**
  * Obtiene todas las solicitudes de asignación, independientemente de su estado.
@@ -243,7 +245,7 @@ export const processAssignmentRequest = async (
     const stockAssetData = stockAssetDoc.data();
 
     // 4. Validate stock and serial number
-    const isSerializable = ['equipo_computo', 'herramienta_electrica'].includes(stockAssetData.tipo);
+    const isSerializable = ['equipo_de_computo', 'herramienta_electrica'].includes(stockAssetData.tipo);
     if (isSerializable && !serialNumber) {
       throw new Error("Se requiere un número de serial para este tipo de activo.");
     }
@@ -268,6 +270,7 @@ export const processAssignmentRequest = async (
       employeeName: requestData.employeeName,
       assignedDate: Timestamp.now(),
       stock: requestData.quantity, // The quantity being assigned to the employee
+      originalRequestId: requestId, // <-- Link to the original request
     });
 
     // 6. Decrement the stock of the source asset
@@ -281,6 +284,44 @@ export const processAssignmentRequest = async (
     });
   });
 };
+
+
+
+
+/**
+ * Reintenta el envío de una solicitud rechazada.
+ * @param requestId El ID de la solicitud a reintentar.
+ * @param trackingNumber El nuevo número de guía.
+ * @param carrier La nueva transportadora.
+ * @param serialNumber El nuevo serial, si aplica.
+ */
+export const retryAssignment = async (requestId: string, trackingNumber: string, carrier: string, serialNumber?: string): Promise<void> => {
+    const requestRef = doc(db, "assignmentRequests", requestId);
+    await updateDoc(requestRef, {
+        status: 'enviado', // Change status back to sent
+        trackingNumber: trackingNumber,
+        carrier: carrier,
+        serialNumber: serialNumber || null, // Update serial if provided
+        rejectionReason: '' // Clear the previous rejection reason
+    });
+    // Note: This does not create a new asset or modify the disputed one.
+    // The assumption is that the same physical asset is being resent, or a new one is handled manually.
+    // A more complex implementation would be needed to swap the asset in the DB.
+};
+
+/**
+ * Archiva una solicitud de asignación que no se puede completar.
+ * @param requestId El ID de la solicitud a archivar.
+ * @param reason El motivo por el cual se archiva.
+ */
+export const archiveAssignment = async (requestId: string, reason: string): Promise<void> => {
+    const requestRef = doc(db, "assignmentRequests", requestId);
+    await updateDoc(requestRef, {
+        status: 'archivado',
+        archiveReason: reason
+    });
+};
+
 
 /**
  * Obtiene los procesos de devolución iniciados.
@@ -474,14 +515,36 @@ export const confirmAssetReceipt = async (assetId: string): Promise<void> => {
 };
 
 /**
- * Rechaza la recepción de un activo.
- * @param assetId - El ID del activo a rechazar.
- * @param reason - La razón del rechazo.
+ * Rechaza la recepción de un activo. Esta acción es transaccional.
+ * @param assetId El ID del activo que el empleado está rechazando.
+ * @param reason La razón del rechazo.
  */
 export const rejectAssetReceipt = async (assetId: string, reason: string): Promise<void> => {
-  await updateDoc(doc(db, "assets", assetId), { 
-    status: 'en disputa', 
-    rejectionReason: reason 
+  await runTransaction(db, async (transaction) => {
+    const assetRef = doc(db, "assets", assetId);
+    const assetDoc = await transaction.get(assetRef);
+
+    if (!assetDoc.exists() || !assetDoc.data().originalRequestId) {
+      throw new Error("El activo no es válido o no tiene una solicitud de asignación original.");
+    }
+
+    const assetData = assetDoc.data();
+    const originalRequestId = assetData.originalRequestId;
+
+    // 1. Actualizar el estado del activo a 'en disputa'
+    transaction.update(assetRef, { 
+      status: 'en disputa', 
+      rejectionReason: reason 
+    });
+
+    // 2. Actualizar la solicitud de asignación original a 'rechazado'
+    const requestRef = doc(db, "assignmentRequests", originalRequestId);
+    transaction.update(requestRef, { 
+      status: 'rechazado', 
+      rejectionReason: reason 
+    });
+
+    // (Opcional) Aquí se podría agregar lógica para notificaciones
   });
 };
 
