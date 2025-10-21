@@ -135,10 +135,29 @@ export const addAsset = async (assetData: { reference?: string; name: string; se
  * Obtiene todos los activos del inventario.
  * @returns Una promesa que se resuelve en un array de objetos de activo.
  */
-export const getInventory = async (): Promise<Asset[]> => {
-  const assetsRef = collection(db, "assets");
-  const querySnapshot = await getDocs(assetsRef);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
+export const getInventoryItems = async (userRole) => {
+  let inventoryCollection = collection(db, "inventory");
+  let q;
+
+  switch (userRole) {
+    case "Master IT":
+      q = query(inventoryCollection, where("category", "==", "Equipo De Computo"));
+      break;
+    case "Master Campo":
+    case "Master Depot":
+      q = query(inventoryCollection, where("category", "in", ["Herramienta Electrica", "Herramienta Manual"]));
+      break;
+    case "Master":
+      q = query(inventoryCollection);
+      break;
+    default:
+      // For other roles or if no role is provided, return an empty array
+      return [];
+  }
+
+  const querySnapshot = await getDocs(q);
+  const items = querySnapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+  return items;
 };
 
 /**
@@ -339,6 +358,7 @@ export const getStockAssets = async (role: Role): Promise<Asset[]> => {
     case 'master_depot':
       q = query(assetsRef, ...baseQueryConstraints, where("tipo", "in", ["herramienta_electrica", "herramienta_manual"]));
       break;
+    case 'logistica':
     case 'master':
       q = query(assetsRef, ...baseQueryConstraints);
       break;
