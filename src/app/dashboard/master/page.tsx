@@ -39,26 +39,31 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  User, 
-  Role, 
-  inviteUser, 
-  getUsers, 
-  updateUser, 
-  deleteUser, 
-  getReplacementRequestsForMaster, 
-  updateReplacementRequestStatus, 
-  sendBulkAssignmentRequests, 
-  getStockAssets, 
+import {
+  User,
+  Role,
+  inviteUser,
+  getUsers,
+  updateUser,
+  deleteUser,
+  getReplacementRequestsForMaster,
+  updateReplacementRequestStatus,
+  sendBulkAssignmentRequests,
+  getStockAssets,
   Asset,
   ReplacementRequest,
-  ReplacementStatus
-} from "@/lib/services";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+  ReplacementStatus,
+  // Maintenance services
+  getStuckAssets,
+  revertAssetStatus,
+  createReplacementRequest,
+  createLogisticsRequestFromStuckAsset
+} from "@/lib/services";import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function MasterPage() {
   const { userData, loading } = useAuth();
@@ -70,6 +75,15 @@ export default function MasterPage() {
   const [employees, setEmployees] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
+
+  // Dialog state for Rejection
+  const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
+  const [requestToActOn, setRequestToActOn] = useState<ReplacementRequest | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+
+  // Maintenance state
+  const [stuckAssets, setStuckAssets] = useState<Asset[]>([]);
+
   
   // Dialog state for User Management
   const [userDialogOpen, setUserDialogOpen] = useState(false);
@@ -98,18 +112,19 @@ export default function MasterPage() {
     try {
       const isOriginalMaster = userData.role === 'master';
   
-      const [requests, fetchedEmployees, fetchedAssets, allSystemUsers] = await Promise.all([
-        getReplacementRequestsForMaster(userData.id),
-        getUsers('empleado', isOriginalMaster ? undefined : userData.id),
-        getStockAssets(userData.role),
-        getUsers(undefined, isOriginalMaster ? undefined : userData.id)
-      ]);
-  
-      setReplacementRequests(requests);
-      setEmployees(fetchedEmployees);
-      setStockAssets(fetchedAssets);
-      setAllUsers(allSystemUsers);
-    } catch (error: any) {
+          const [requests, fetchedEmployees, fetchedAssets, allSystemUsers, fetchedStuckAssets] = await Promise.all([
+            getReplacementRequestsForMaster(userData.id),
+            getUsers('empleado', isOriginalMaster ? undefined : userData.id),
+            getStockAssets(userData.role),
+            getUsers(undefined, isOriginalMaster ? undefined : userData.id),
+            getStuckAssets()
+          ]);
+      
+          setReplacementRequests(requests);
+          setEmployees(fetchedEmployees);
+          setStockAssets(fetchedAssets);
+          setAllUsers(allSystemUsers);
+          setStuckAssets(fetchedStuckAssets);    } catch (error: any) {
         console.error("Error fetching data:", error);
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudieron cargar los datos.' });
     }
@@ -175,18 +190,66 @@ export default function MasterPage() {
 
   // --- End Multi-Assignment Handlers ---
 
-  const handleReplacementApproval = async (id: string, status: ReplacementStatus) => {
+  const handleOpenRejectionDialog = (request: ReplacementRequest) => {
+    setRequestToActOn(request);
+    setRejectionDialogOpen(true);
+    setRejectionReason('');
+  };
+  
+  const handleRejectSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!requestToActOn || !rejectionReason || !userData) {
+      toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo de rechazo y estar autenticado." });
+      return;
+    }
     try {
-      await updateReplacementRequestStatus(id, status);
-      toast({ title: `Solicitud ${status === 'aprobado' ? 'Aprobada' : 'Rechazada'}` });
+      await updateReplacementRequestStatus(requestToActOn.id, 'rechazado', { id: userData.id, name: userData.name }, rejectionReason);
+      toast({ title: "Solicitud Rechazada" });
+      setRejectionDialogOpen(false);
       await fetchAllData();
     } catch (error: any) {
-      console.error(`Error updating status:`, error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la solicitud." });
+      console.error(`Error rejecting request:`, error);
+      toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo rechazar la solicitud." });
     }
   };
   
-  const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleApproveRequest = async (id: string) => {
+    if (!userData) return;
+    try {
+      await updateReplacementRequestStatus(id, 'aprobado', { id: userData.id, name: userData.name });
+      toast({ title: `Solicitud Aprobada` });
+      await fetchAllData();
+    } catch (error: any) {
+      console.error(`Error approving request:`, error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo aprobar la solicitud." });
+    }
+  };  
+  // --- Maintenance Handlers ---
+const handleRevertAsset = async (assetId: string) => {
+  try {
+    await revertAssetStatus(assetId);
+    toast({ title: "Activo Revertido", description: "El activo ha sido restaurado al estado 'activo'." });
+    await fetchAllData();
+  } catch (error: any) {
+    toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo revertir el activo." });
+  }
+};
+
+const handleCreateRequestManually = async (asset: Asset) => {
+  if (!asset.employeeId || !userData?.id) {
+    toast({ variant: "destructive", title: "Error", description: "El activo no tiene un empleado asignado o el master no está autenticado." });
+    return;
+  }
+  try {
+    await createLogisticsRequestFromStuckAsset(userData.id, asset);
+    toast({ title: "Solicitud Enviada a Logística", description: "Se ha generado una orden de reemplazo para logística." });
+    await fetchAllData();
+  } catch (error: any) {
+    toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo crear la solicitud para logística." });
+  }
+};
+
+const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newUserEmail || !newUserRole) {
       toast({ variant: "destructive", title: "Error", description: "Correo y Rol son requeridos." });
@@ -264,8 +327,8 @@ export default function MasterPage() {
           <TabsTrigger value="users">Gestión de Usuarios</TabsTrigger>
           {userData.role === 'master' && (
             <TabsTrigger value="assets">Gestión de Activos</TabsTrigger>
-          )}
-        </TabsList>
+            )}
+            <TabsTrigger value="maintenance">Mantenimiento <Badge className="ml-2" variant="destructive">{stuckAssets.length}</Badge></TabsTrigger>        </TabsList>
 
         <TabsContent value="assignments">
           <Card>
@@ -367,17 +430,16 @@ export default function MasterPage() {
                         </a>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReplacementApproval(request.id!, 'aprobado')}>
-                            <Check className="h-4 w-4 text-green-500" />
-                            <span className="sr-only">Aprobar</span>
-                          </Button>
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleReplacementApproval(request.id!, 'rechazado')}>
-                            <X className="h-4 w-4 text-red-500" />
-                            <span className="sr-only">Rechazar</span>
-                          </Button>
-                        </div>
-                      </TableCell>
+                                            <div className="flex gap-2 justify-end">
+                                              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApproveRequest(request.id!)}>
+                                                <Check className="h-4 w-4 text-green-500" />
+                                                <span className="sr-only">Aprobar</span>
+                                              </Button>
+                                              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleOpenRejectionDialog(request)}>
+                                                <X className="h-4 w-4 text-red-500" />
+                                                <span className="sr-only">Rechazar</span>
+                                              </Button>
+                                            </div>                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -494,9 +556,56 @@ export default function MasterPage() {
                 </CardContent>
             </Card>
         </TabsContent>
-
-      </Tabs>
-
+        
+        <TabsContent value="maintenance">
+          <Card>
+            <CardHeader>
+              <CardTitle>Mantenimiento de Datos</CardTitle>
+              <CardDescription>
+                Activos en estado "reemplazo solicitado" del flujo de trabajo anterior. Puede revertirlos a "activo" o generar una solicitud formal para que sigan el nuevo flujo de aprobación.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Activo</TableHead>
+                    <TableHead>Empleado Asignado</TableHead>
+                    <TableHead>Motivo Original</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stuckAssets.length > 0 ? (
+                    stuckAssets.map((asset) => (
+                      <TableRow key={asset.id}>
+                        <TableCell>{asset.name} ({asset.serial || 'N/A'})</TableCell>
+                        <TableCell>{asset.employeeName}</TableCell>
+                        <TableCell>{asset.replacementReason || 'N/A'}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" className="mr-2" onClick={() => handleRevertAsset(asset.id)}>
+                            Revertir a Activo
+                          </Button>
+                          <Button size="sm" onClick={() => handleCreateRequestManually(asset)}>
+                            Generar Solicitud
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center">
+                        No hay activos atascados.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        </Tabs>
 
       {/* Edit User Dialog */}
       <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
@@ -557,7 +666,34 @@ export default function MasterPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-
-    </>
-  );
-}
+        
+        {/* Rejection Dialog for Replacement Requests */}
+        <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>
+          <DialogContent>
+            <form onSubmit={handleRejectSubmit}>
+              <DialogHeader>
+                <DialogTitle>Rechazar Solicitud de Reemplazo</DialogTitle>
+                <DialogDescription>
+                  Por favor, explique por qué está rechazando esta solicitud para el activo <strong>{requestToActOn?.assetName}</strong>. El empleado será notificado.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <Label htmlFor="rejectionReason">Motivo del Rechazo</Label>
+                <Textarea
+                  id="rejectionReason"
+                  placeholder="Ej: El daño reportado no justifica un reemplazo, el activo aún es funcional..."
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  required
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setRejectionDialogOpen(false)}>Cancelar</Button>
+                <Button type="submit" variant="destructive">Confirmar Rechazo</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+        
+        </>
+        );}

@@ -31,7 +31,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getMyAssignedAssets, confirmAssetReceipt, rejectAssetReceipt, initiateDevolutionProcess, requestAssetReplacement, Asset } from "@/lib/services";
+import { getMyAssignedAssets, confirmAssetReceipt, rejectAssetReceipt, initiateDevolutionProcess, createReplacementRequest, getPendingReplacementRequestsForEmployee, Asset, ReplacementRequest } from "@/lib/services";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,6 +49,7 @@ export default function EmpleadoPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [assignedAssets, setAssignedAssets] = useState<Asset[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<ReplacementRequest[]>([]);
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
   const [assetToActOn, setAssetToActOn] = useState<Asset | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -65,11 +66,15 @@ export default function EmpleadoPage() {
   const fetchAssets = useCallback(async () => {
     if (userData?.id) {
         try {
-            const assets = await getMyAssignedAssets(userData.id);
+            const [assets, requests] = await Promise.all([
+              getMyAssignedAssets(userData.id),
+              getPendingReplacementRequestsForEmployee(userData.id)
+            ]);
             setAssignedAssets(assets);
+            setPendingRequests(requests);
         } catch(error) {
-            console.error("Error fetching assets:", error);
-            toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar sus activos.' });
+            console.error("Error fetching data:", error);
+            toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar sus datos.' });
         }
     }
   }, [userData, toast]);
@@ -81,8 +86,9 @@ export default function EmpleadoPage() {
   }, [userData, fetchAssets]);
 
   const handleConfirmReceipt = async (id: string) => {
+    if (!userData) return;
     try {
-      await confirmAssetReceipt(id);
+      await confirmAssetReceipt(id, { id: userData.id, name: userData.name });
       toast({ title: "Recepción Confirmada", description: "El estado del activo ha sido actualizado a 'activo'." });
       await fetchAssets();
     } catch (error) {
@@ -99,12 +105,12 @@ export default function EmpleadoPage() {
 
   const handleRejectReceipt = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!assetToActOn || !rejectionReason) {
+    if (!assetToActOn || !rejectionReason || !userData) {
       toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo de rechazo." });
       return;
     }
     try {
-      await rejectAssetReceipt(assetToActOn.id, rejectionReason);
+      await rejectAssetReceipt(assetToActOn.id, rejectionReason, { id: userData.id, name: userData.name });
       toast({ title: "Recepción Rechazada", description: "El activo ha sido marcado como 'en disputa'. Logística será notificada." });
       setRejectionDialogOpen(false);
       await fetchAssets();
@@ -134,23 +140,26 @@ export default function EmpleadoPage() {
 
   const handleRequestReplacement = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!assetToReplace || !replacementReason) {
-      toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo para la solicitud de reemplazo." });
+    if (!assetToReplace || !replacementReason || !userData) {
+      toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo y estar autenticado." });
       return;
     }
     try {
-      await requestAssetReplacement(assetToReplace.id, replacementReason);
-      toast({ title: "Solicitud Enviada", description: "Su solicitud de reemplazo ha sido enviada a logística." });
+      await createReplacementRequest(userData.id, assetToReplace.id, replacementReason);
+      toast({ title: "Solicitud Enviada", description: "Su solicitud de reemplazo ha sido enviada para aprobación del master." });
       setReplacementDialogOpen(false);
+      setAssetToReplace(null);
+      setReplacementReason('');
       await fetchAssets();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error solicitando reemplazo:", error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud de reemplazo." });
+      toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo enviar la solicitud de reemplazo." });
     }
   };
 
   const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente');
   const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente');
+  const pendingReplacementAssetIds = new Set(pendingRequests.map(req => req.assetId));
 
   if (loading || !userData) {
     return <div>Cargando...</div>;
@@ -235,12 +244,16 @@ export default function EmpleadoPage() {
                         <TableCell>{asset.name}</TableCell>
                         <TableCell>{asset.serial || 'N/A'}</TableCell>
                         <TableCell>
-                          <Badge variant={asset.status === 'activo' ? 'default' : asset.status === 'en devolución' ? 'secondary' : 'outline'}>
-                            {asset.status}
-                          </Badge>
+                          {pendingReplacementAssetIds.has(asset.id) ? (
+                            <Badge variant="destructive">Reemplazo Solicitado</Badge>
+                          ) : (
+                            <Badge variant={asset.status === 'activo' ? 'default' : asset.status === 'en devolución' ? 'secondary' : 'outline'}>
+                              {asset.status}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {asset.status === 'activo' && (
+                          {asset.status === 'activo' && !pendingReplacementAssetIds.has(asset.id) && (
                             <Button size="sm" variant="outline" onClick={() => handleOpenReplacementDialog(asset)}>Solicitar Reemplazo</Button>
                           )}
                         </TableCell>

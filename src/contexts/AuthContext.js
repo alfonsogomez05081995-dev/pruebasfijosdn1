@@ -58,10 +58,15 @@ export function AuthProvider({ children }) {
         const currentData = userDoc.data();
 
         if (currentData.status === 'invitado') {
-          // This is an invited user logging in. Let's activate them.
+          // This is an invited user logging in. Let's activate them and link their master.
+          const invitationRef = doc(db, "invitations", user.email.toLowerCase());
+          const invitationSnap = await getDoc(invitationRef);
+          const masterId = invitationSnap.exists() ? invitationSnap.data().invitedBy : null;
+
           await updateDoc(userDoc.ref, {
             status: 'active',
-            uid: user.uid // Add the auth UID to the document
+            uid: user.uid, // Add the auth UID to the document
+            masterId: masterId, // Link to the inviting master
           });
           // Re-fetch the (now updated) data to ensure UI has the latest info
           const updatedDoc = await getDoc(userDoc.ref);
