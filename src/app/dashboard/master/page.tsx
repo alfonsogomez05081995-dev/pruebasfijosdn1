@@ -317,7 +317,7 @@ export default function MasterPage() {
                             onChange={(e) => handleAssignmentRowChange(row.id, 'quantity', parseInt(e.target.value, 10) || 1)}
                             className={`w-24 ${isStockAlert ? 'border-destructive' : ''}`}
                           />
-                          {isStockAlert && <AlertTriangle className="h-5 w-5 text-destructive" title={`Stock insuficiente. Disponible: ${stock}`} />}
+                          {isStockAlert && <AlertTriangle className="h-5 w-5 text-destructive" />}
                           <Button variant="ghost" size="icon" onClick={() => removeAssignmentRow(row.id)} disabled={assignmentRows.length <= 1}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -459,7 +459,7 @@ export default function MasterPage() {
                         <Badge variant={u.role.startsWith('master') ? 'default' : 'secondary'}>{u.role}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={u.status === 'activo' ? 'success' : 'outline'}>{u.status}</Badge>
+                        <Badge variant={u.status === 'activo' ? 'default' : 'outline'}>{u.status}</Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-2 justify-end">

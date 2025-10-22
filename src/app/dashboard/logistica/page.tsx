@@ -33,21 +33,23 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback, ChangeEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { 
-    addAsset, 
-    addAssetsInBatch, 
-    getAssignmentRequestsForLogistics, 
-    getAllAssignmentRequests, 
-    processAssignmentRequest, 
-    getDevolutionProcesses, 
-    verifyAssetReturn, 
-    completeDevolutionProcess, 
-    retryAssignment, 
-    archiveAssignment, 
-    AssignmentRequest, 
-    AssetType, 
-    DevolutionProcess, 
-    NewAssetData 
+import {
+    addAsset,
+    addAssetsInBatch,
+    getAssignmentRequestsForLogistics,
+    getAllAssignmentRequests,
+    processAssignmentRequest,
+    getDevolutionProcesses,
+    verifyAssetReturn,
+    completeDevolutionProcess,
+    retryAssignment,
+    archiveAssignment,
+    AssignmentRequest,
+    AssetType,
+    DevolutionProcess,
+    NewAssetData,
+    getAssetById,
+    getAvailableSerials
 } from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as XLSX from 'xlsx';
@@ -77,6 +79,7 @@ export default function LogisticaPage() {
   const [carrier, setCarrier] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [archiveReason, setArchiveReason] = useState('');
+  const [availableSerials, setAvailableSerials] = useState<string[]>([]);
 
 
   useEffect(() => {
@@ -137,12 +140,24 @@ export default function LogisticaPage() {
     }
   };
 
-  const handleOpenProcessModal = (request: AssignmentRequest) => {
+  const handleOpenProcessModal = async (request: AssignmentRequest) => {
     setSelectedRequest(request);
     setShowProcessModal(true);
     setTrackingNumber('');
     setCarrier('');
     setSerialNumber('');
+    setAvailableSerials([]);
+
+    try {
+        const asset = await getAssetById(request.assetId);
+        if (asset && asset.reference && (asset.tipo === 'equipo_de_computo' || asset.tipo === 'herramienta_electrica')) {
+            const serials = await getAvailableSerials(asset.reference);
+            setAvailableSerials(serials);
+        }
+    } catch (error) {
+        console.error("Error fetching serials:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los seriales disponibles.' });
+    }
   };
 
   const handleOpenRejectionModal = (request: AssignmentRequest) => {
@@ -389,7 +404,7 @@ export default function LogisticaPage() {
                       <SelectContent>
                         <SelectItem value="herramienta_manual">Herramienta Manual</SelectItem>
                         <SelectItem value="herramienta_electrica">Herramienta Eléctrica</SelectItem>
-                        <SelectItem value="equipo_computo">Equipo de Cómputo</SelectItem>
+                        <SelectItem value="equipo_de_computo">Equipo de Cómputo</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -454,7 +469,7 @@ export default function LogisticaPage() {
                       <TableCell>{req.assetName}</TableCell>
                       <TableCell>{req.quantity}</TableCell>
                       <TableCell>
-                        <Badge variant={req.status === 'pendiente de envío' ? 'warning' : req.status === 'rechazado' ? 'destructive' : 'outline'}>{req.status}</Badge>
+                        <Badge variant={req.status === 'pendiente de envío' ? 'secondary' : req.status === 'rechazado' ? 'destructive' : 'outline'}>{req.status}</Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         {req.status === 'pendiente de envío' && (
@@ -503,7 +518,7 @@ export default function LogisticaPage() {
                                   <TableCell>{asset.name}</TableCell>
                                   <TableCell>{asset.serial}</TableCell>
                                   <TableCell>
-                                  <Badge variant={asset.verified ? 'success' : 'outline'}>{asset.verified ? 'Verificado' : 'Pendiente'}</Badge>
+                                  <Badge variant={asset.verified ? 'default' : 'outline'}>{asset.verified ? 'Verificado' : 'Pendiente'}</Badge>
                                   </TableCell>
                                   <TableCell className="text-right">
                                   {!asset.verified && (
@@ -554,7 +569,7 @@ export default function LogisticaPage() {
                       <TableCell>
                         <Badge variant={
                           req.status === 'enviado' ? 'default' :
-                          req.status === 'pendiente de envío' ? 'warning' : 
+                          req.status === 'pendiente de envío' ? 'secondary' : 
                           req.status === 'rechazado' ? 'destructive' : 'outline'
                         }>{req.status}</Badge>
                       </TableCell>
@@ -589,7 +604,20 @@ export default function LogisticaPage() {
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="serialNumber" className="text-right">Serial (si aplica)</Label>
-              <Input id="serialNumber" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="col-span-3" placeholder="Ingrese el serial del equipo" />
+              {availableSerials.length > 0 ? (
+                <Select onValueChange={setSerialNumber} value={serialNumber}>
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Seleccione un serial" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSerials.map(serial => (
+                      <SelectItem key={serial} value={serial}>{serial}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input id="serialNumber" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="col-span-3" placeholder="Ingrese el serial del equipo" />
+              )}
             </div>
             <DialogFooter>
               <Button type="submit">Confirmar Envío</Button>

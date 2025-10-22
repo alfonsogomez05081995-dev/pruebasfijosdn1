@@ -123,8 +123,8 @@ export default function EmpleadoPage() {
     }
   };
 
-  const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente');
-  const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente');
+  const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente' || asset.status === 'en disputa');
+  const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente' && asset.status !== 'en disputa');
 
   if (loading || !userData) {
     return <div>Cargando...</div>;
@@ -209,7 +209,7 @@ export default function EmpleadoPage() {
                         <TableCell>{asset.name}</TableCell>
                         <TableCell>{asset.serial || 'N/A'}</TableCell>
                         <TableCell>
-                          <Badge variant={asset.status === 'activo' ? 'success' : asset.status === 'en devolución' ? 'warning' : 'outline'}>
+                          <Badge variant={asset.status === 'activo' ? 'default' : asset.status === 'en devolución' ? 'secondary' : 'outline'}>
                             {asset.status}
                           </Badge>
                         </TableCell>

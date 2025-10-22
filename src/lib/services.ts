@@ -7,18 +7,20 @@ import { db, storage } from './firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDoc, Timestamp, runTransaction, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { v4 as uuidv4 } from 'uuid';
-import { 
-    Role, 
-    User, 
-    Asset, 
-    AssignmentRequest, 
-    ReplacementRequest, 
-    DevolutionProcess, 
-    NewAssetData, 
-    AssignmentStatus, 
+import {
+    Role,
+    User,
+    Asset,
+    AssignmentRequest,
+    ReplacementRequest,
+    DevolutionProcess,
+    NewAssetData,
+    AssignmentStatus,
     ReplacementStatus,
     AssetType
 } from './types';
+
+export * from './types';
 
 // ------------------- USER MANAGEMENT -------------------
 
@@ -97,38 +99,82 @@ export const deleteUser = async (userId: string): Promise<void> => {
 // ------------------- LOGISTICS SERVICES -------------------
 
 /**
- * Agrega múltiples activos en un lote.
+ * Agrega un nuevo activo al inventario o actualiza el stock si ya existe (upsert).
+ * La unicidad se determina por el número de serie para activos serializables,
+ * o por la referencia para activos no serializables.
+ * @param assetData - Los datos del activo a agregar o actualizar.
+ */
+export const upsertAsset = async (assetData: NewAssetData): Promise<void> => {
+  const isSerializable = ['equipo_de_computo', 'herramienta_electrica'].includes(assetData.tipo);
+  let stockAssetsQuery;
+
+  // Para activos con serial, el serial es el identificador único.
+  if (isSerializable) {
+    if (!assetData.serial) {
+      throw new Error(`El activo de tipo '${assetData.tipo}' debe tener un número de serie.`);
+    }
+    // No se puede agregar masivamente activos con serial. La cantidad debe ser 1.
+    if (assetData.stock !== 1) {
+        throw new Error(`La cantidad para activos con serial debe ser 1.`);
+    }
+    stockAssetsQuery = query(collection(db, "assets"), where("serial", "==", assetData.serial));
+  } else {
+    // Para activos sin serial, la referencia es el identificador único.
+    if (!assetData.reference) {
+      throw new Error("El activo debe tener una referencia.");
+    }
+    stockAssetsQuery = query(
+      collection(db, "assets"),
+      where("reference", "==", assetData.reference),
+      where("status", "==", "en stock")
+    );
+  }
+
+  const stockAssetsSnapshot = await getDocs(stockAssetsQuery);
+
+  await runTransaction(db, async (transaction) => {
+    if (!stockAssetsSnapshot.empty) {
+      // El activo ya existe, actualizar stock.
+      const assetDoc = stockAssetsSnapshot.docs[0];
+      const currentStock = assetDoc.data().stock || 0;
+      // Para activos con serial, no se actualiza el stock, simplemente se confirma que existe.
+      if (!isSerializable) {
+        transaction.update(assetDoc.ref, { stock: currentStock + assetData.stock });
+      }
+      // Si es serializable y se encuentra, no hacemos nada para evitar duplicados.
+      // Opcional: se podría lanzar un error si se intenta agregar un serial ya existente.
+    } else {
+      // El activo no existe, crearlo.
+      const newAssetRef = doc(collection(db, "assets"));
+      transaction.set(newAssetRef, {
+        ...assetData,
+        status: 'en stock',
+        // Aseguramos que el stock sea 1 si es serializable
+        stock: isSerializable ? 1 : assetData.stock,
+      });
+    }
+  });
+};
+
+
+/**
+ * Agrega múltiples activos en un lote, actualizando los existentes.
  * @param assets - Un array de objetos con los datos de los nuevos activos.
  */
 export const addAssetsInBatch = async (assets: NewAssetData[]): Promise<void> => {
-  const batch = writeBatch(db);
-
-  assets.forEach((assetData) => {
-    const newAssetRef = doc(collection(db, "assets"));
-    batch.set(newAssetRef, { ...assetData, status: 'en stock' });
-  });
-
-  await batch.commit();
+  // Usamos Promise.all para procesar todos los activos en paralelo.
+  // Cada uno usará su propia transacción a través de upsertAsset.
+  const promises = assets.map(assetData => upsertAsset(assetData));
+  await Promise.all(promises);
 };
 
 /**
  * Agrega un nuevo activo al inventario o actualiza el stock si ya existe.
  * @param assetData - Los datos del activo a agregar.
  */
-export const addAsset = async (assetData: { reference?: string; name: string; serial?: string; location?: string; stock: number; tipo: AssetType }): Promise<void> => {
-  await runTransaction(db, async (transaction) => {
-    const stockAssetsQuery = query(collection(db, "assets"), where("name", "==", assetData.name), where("status", "==", "en stock"));
-    const stockAssetsSnapshot = await getDocs(stockAssetsQuery);
-    
-    if (!stockAssetsSnapshot.empty) {
-      const assetDoc = stockAssetsSnapshot.docs[0];
-      const currentStock = assetDoc.data().stock || 0;
-      transaction.update(assetDoc.ref, { stock: currentStock + assetData.stock });
-    } else {
-      const newAssetRef = doc(collection(db, "assets"));
-      transaction.set(newAssetRef, { ...assetData, status: 'en stock' });
-    }
-  });
+export const addAsset = async (assetData: NewAssetData): Promise<void> => {
+    // Simplemente llama a la nueva función upsert
+    await upsertAsset(assetData);
 };
 
 /**
@@ -149,8 +195,8 @@ export const getInventoryItems = async (userRole: Role): Promise<Asset[]> => {
     case "master_depot":
       q = query(assetsRef, where("tipo", "in", ["herramienta_electrica", "herramienta_manual"]));
       break;
-    case "Logistica":
-    case "Master":
+    case "logistica":
+    case "master":
       // Los roles Master y Logistica pueden ver todos los activos sin filtrar por categoría.
       q = query(assetsRef);
       break;
@@ -180,6 +226,22 @@ export const updateAsset = async (assetId: string, data: Partial<Asset>): Promis
 export const deleteAsset = async (assetId: string): Promise<void> => {
   const assetRef = doc(db, "assets", assetId);
   await deleteDoc(assetRef);
+};
+
+/**
+ * Obtiene los seriales disponibles para una referencia de activo específica.
+ * @param reference - La referencia del activo.
+ * @returns Una promesa que se resuelve en un array de strings con los seriales.
+ */
+export const getAvailableSerials = async (reference: string): Promise<string[]> => {
+  const q = query(
+    collection(db, "assets"),
+    where("reference", "==", reference),
+    where("status", "==", "en stock"),
+    where("serial", "!=", null)
+  );
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => doc.data().serial as string);
 };
 
 /**
@@ -296,17 +358,37 @@ export const processAssignmentRequest = async (
  * @param serialNumber El nuevo serial, si aplica.
  */
 export const retryAssignment = async (requestId: string, trackingNumber: string, carrier: string, serialNumber?: string): Promise<void> => {
-    const requestRef = doc(db, "assignmentRequests", requestId);
-    await updateDoc(requestRef, {
-        status: 'enviado', // Change status back to sent
-        trackingNumber: trackingNumber,
-        carrier: carrier,
-        serialNumber: serialNumber || null, // Update serial if provided
-        rejectionReason: '' // Clear the previous rejection reason
+    // 1. Find the disputed asset linked to this request
+    const assetsQuery = query(collection(db, "assets"), where("originalRequestId", "==", requestId), where("status", "==", "en disputa"));
+    const assetsSnapshot = await getDocs(assetsQuery);
+
+    if (assetsSnapshot.empty) {
+        // This case should ideally not happen if the flow is correct
+        // However, we can still try to update the request.
+        // This could happen if the asset was modified manually.
+        console.warn(`No se encontró ningún activo en disputa para la solicitud ${requestId}. Se actualizará la solicitud de todos modos.`);
+    }
+
+    await runTransaction(db, async (transaction) => {
+        // 2. Update the original request
+        const requestRef = doc(db, "assignmentRequests", requestId);
+        transaction.update(requestRef, {
+            status: 'enviado',
+            trackingNumber: trackingNumber,
+            carrier: carrier,
+            serialNumber: serialNumber || null,
+            rejectionReason: ''
+        });
+
+        // 3. Update the asset's status back to 'recibido pendiente' if found
+        if (!assetsSnapshot.empty) {
+            const assetToUpdateRef = assetsSnapshot.docs[0].ref;
+            transaction.update(assetToUpdateRef, {
+                status: 'recibido pendiente',
+                rejectionReason: '' // Clear rejection reason on the asset as well
+            });
+        }
     });
-    // Note: This does not create a new asset or modify the disputed one.
-    // The assumption is that the same physical asset is being resent, or a new one is handled manually.
-    // A more complex implementation would be needed to swap the asset in the DB.
 };
 
 /**
@@ -396,7 +478,7 @@ export const getStockAssets = async (role: Role): Promise<Asset[]> => {
 
   switch (role) {
     case 'master_it':
-      q = query(assetsRef, ...baseQueryConstraints, where("tipo", "==", "equipo_computo"));
+      q = query(assetsRef, ...baseQueryConstraints, where("tipo", "==", "equipo_de_computo"));
       break;
     case 'master_campo':
     case 'master_depot':
@@ -601,11 +683,11 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
     for (const assetDoc of assetsSnapshot.docs) {
         batch.update(assetDoc.ref, { status: 'en devolución' });
         const assetData = assetDoc.data();
-        assetsForProcess.push({ 
-            id: assetDoc.id, 
-            name: assetData.name, 
+        assetsForProcess.push({
+            id: assetDoc.id,
+            name: assetData.name,
             serial: assetData.serial || 'N/A',
-            verified: false 
+            verified: false
         });
     }
 

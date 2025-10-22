@@ -32,7 +32,7 @@ export interface Asset {
   rejectionReason?: string;
 }
 
-export type AssignmentStatus = 'pendiente de envío' | 'enviado' | 'pendiente por stock';
+export type AssignmentStatus = 'pendiente de envío' | 'enviado' | 'pendiente por stock' | 'rechazado' | 'archivado';
 export interface AssignmentRequest {
   id: string;
   employeeId: string;
@@ -44,6 +44,8 @@ export interface AssignmentRequest {
   status: AssignmentStatus;
   trackingNumber?: string;
   carrier?: string;
+  masterName?: string;
+  rejectionReason?: string;
 }
 
 export type ReplacementStatus = 'pendiente' | 'aprobado' | 'rechazado';
