@@ -31,7 +31,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getMyAssignedAssets, confirmAssetReceipt, rejectAssetReceipt, initiateDevolutionProcess, Asset } from "@/lib/services";
+import { getMyAssignedAssets, confirmAssetReceipt, rejectAssetReceipt, initiateDevolutionProcess, requestAssetReplacement, Asset } from "@/lib/services";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +52,9 @@ export default function EmpleadoPage() {
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
   const [assetToActOn, setAssetToActOn] = useState<Asset | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [replacementDialogOpen, setReplacementDialogOpen] = useState(false);
+  const [assetToReplace, setAssetToReplace] = useState<Asset | null>(null);
+  const [replacementReason, setReplacementReason] = useState('');
 
   useEffect(() => {
     if (!loading && (!userData || !['master', 'empleado'].includes(userData.role))) {
@@ -120,6 +123,29 @@ export default function EmpleadoPage() {
     } catch (error: any) {
       console.error("Error iniciando devolución:", error);
       toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo iniciar el proceso." });
+    }
+  };
+
+  const handleOpenReplacementDialog = (asset: Asset) => {
+    setAssetToReplace(asset);
+    setReplacementDialogOpen(true);
+    setReplacementReason('');
+  };
+
+  const handleRequestReplacement = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!assetToReplace || !replacementReason) {
+      toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo para la solicitud de reemplazo." });
+      return;
+    }
+    try {
+      await requestAssetReplacement(assetToReplace.id, replacementReason);
+      toast({ title: "Solicitud Enviada", description: "Su solicitud de reemplazo ha sido enviada a logística." });
+      setReplacementDialogOpen(false);
+      await fetchAssets();
+    } catch (error) {
+      console.error("Error solicitando reemplazo:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo enviar la solicitud de reemplazo." });
     }
   };
 
@@ -215,7 +241,7 @@ export default function EmpleadoPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           {asset.status === 'activo' && (
-                            <Button size="sm" variant="outline" disabled>Solicitar Reemplazo</Button>
+                            <Button size="sm" variant="outline" onClick={() => handleOpenReplacementDialog(asset)}>Solicitar Reemplazo</Button>
                           )}
                         </TableCell>
                       </TableRow>
@@ -286,6 +312,32 @@ export default function EmpleadoPage() {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setRejectionDialogOpen(false)}>Cancelar</Button>
               <Button type="submit">Enviar Rechazo</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Replacement Dialog */}
+      <Dialog open={replacementDialogOpen} onOpenChange={setReplacementDialogOpen}>
+        <DialogContent>
+          <form onSubmit={handleRequestReplacement}>
+            <DialogHeader>
+              <DialogTitle>Solicitar Reemplazo de Activo</DialogTitle>
+              <DialogDescription>
+                Por favor, explique por qué necesita un reemplazo para este activo. Sea lo más detallado posible.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <Textarea
+                placeholder="Ej: El portátil no enciende, la batería está fallando..."
+                value={replacementReason}
+                onChange={(e) => setReplacementReason(e.target.value)}
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setReplacementDialogOpen(false)}>Cancelar</Button>
+              <Button type="submit">Enviar Solicitud</Button>
             </DialogFooter>
           </form>
         </DialogContent>

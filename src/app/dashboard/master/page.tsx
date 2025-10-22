@@ -50,7 +50,7 @@ import {
   getUsers, 
   updateUser, 
   deleteUser, 
-  getReplacementRequests, 
+  getReplacementRequestsForMaster, 
   updateReplacementRequestStatus, 
   sendBulkAssignmentRequests, 
   getStockAssets, 
@@ -99,7 +99,7 @@ export default function MasterPage() {
       const isOriginalMaster = userData.role === 'master';
   
       const [requests, fetchedEmployees, fetchedAssets, allSystemUsers] = await Promise.all([
-        getReplacementRequests(),
+        getReplacementRequestsForMaster(userData.id),
         getUsers('empleado', isOriginalMaster ? undefined : userData.id),
         getStockAssets(userData.role),
         getUsers(undefined, isOriginalMaster ? undefined : userData.id)

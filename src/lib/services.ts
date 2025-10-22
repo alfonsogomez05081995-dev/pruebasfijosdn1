@@ -557,22 +557,91 @@ export const sendBulkAssignmentRequests = async (
 };
 
 /**
- * Obtiene las solicitudes de reemplazo pendientes.
+ * Obtiene las solicitudes de reemplazo pendientes para un master específico.
+ * @param masterId - El ID del master.
  * @returns Una promesa que se resuelve en un array de solicitudes de reemplazo.
  */
-export const getReplacementRequests = async (): Promise<ReplacementRequest[]> => {
-  const q = query(collection(db, "replacementRequests"), where("status", "==", "pendiente"));
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReplacementRequest));
+export const getReplacementRequestsForMaster = async (masterId: string): Promise<ReplacementRequest[]> => {
+    const q = query(
+        collection(db, "replacementRequests"),
+        where("masterId", "==", masterId),
+        where("status", "==", "pendiente de aprobacion master")
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReplacementRequest));
 };
 
 /**
- * Actualiza el estado de una solicitud de reemplazo.
- * @param id - El ID de la solicitud de reemplazo a actualizar.
- * @param status - El nuevo estado de la solicitud.
+ * Aprueba una solicitud de reemplazo.
+ * Esto actualiza el estado de la solicitud, el estado del activo original y crea una nueva solicitud de asignación para logística.
+ * @param requestId - El ID de la solicitud de reemplazo a aprobar.
  */
-export const updateReplacementRequestStatus = async (id: string, status: ReplacementStatus): Promise<void> => {
-  await updateDoc(doc(db, "replacementRequests", id), { status });
+export const approveReplacementRequest = async (requestId: string): Promise<void> => {
+  await runTransaction(db, async (transaction) => {
+    const requestRef = doc(db, "replacementRequests", requestId);
+    const requestDoc = await transaction.get(requestRef);
+
+    if (!requestDoc.exists()) {
+      throw new Error("Solicitud de reemplazo no encontrada.");
+    }
+
+    const requestData = requestDoc.data() as ReplacementRequest;
+
+    // 1. Update replacement request status
+    transaction.update(requestRef, { status: 'aprobado' });
+
+    // 2. Update the original asset's status
+    const assetRef = doc(db, "assets", requestData.assetId);
+    transaction.update(assetRef, { status: 'reemplazo solicitado' });
+
+    // 3. Create a new assignment request for logistics
+    const newAssignmentRef = doc(collection(db, "assignmentRequests"));
+    transaction.set(newAssignmentRef, {
+      assetName: `Reemplazo para: ${requestData.assetName}`,
+      assetId: requestData.assetId, // This is the ID of the asset to be replaced
+      employeeId: requestData.employeeId,
+      employeeName: requestData.employeeName,
+      masterId: requestData.masterId,
+      quantity: 1, // Replacements are one-to-one
+      status: 'pendiente de envío',
+      type: 'reemplazo',
+      date: Timestamp.now(),
+      originalReplacementRequestId: requestId,
+    });
+  });
+};
+
+/**
+ * Rechaza una solicitud de reemplazo.
+ * @param requestId - El ID de la solicitud de reemplazo a rechazar.
+ * @param reason - El motivo del rechazo.
+ */
+export const rejectReplacementRequest = async (requestId: string, reason: string): Promise<void> => {
+  const requestRef = doc(db, "replacementRequests", requestId);
+  await updateDoc(requestRef, {
+    status: 'rechazado',
+    rejectionReason: reason,
+  });
+};
+
+/**
+ * Actualiza el estado de una solicitud de reemplazo (aprobada o rechazada).
+ * @param requestId - El ID de la solicitud de reemplazo a actualizar.
+ * @param status - El nuevo estado: 'aprobado' or 'rechazado'.
+ * @param reason - El motivo del rechazo (solo si el estado es 'rechazado').
+ */
+export const updateReplacementRequestStatus = async (requestId: string, status: ReplacementStatus, reason?: string): Promise<void> => {
+  if (status === 'aprobado') {
+    await approveReplacementRequest(requestId);
+  } else if (status === 'rechazado') {
+    if (!reason) {
+      throw new Error("Se requiere un motivo para rechazar la solicitud.");
+    }
+    await rejectReplacementRequest(requestId, reason);
+  } else {
+    // Opcional: manejar otros estados o lanzar un error si el estado no es válido
+    throw new Error(`Estado '${status}' no válido para la actualización.`);
+  }
 };
 
 // ------------------- EMPLOYEE SERVICES -------------------
@@ -627,6 +696,20 @@ export const rejectAssetReceipt = async (assetId: string, reason: string): Promi
     });
 
     // (Opcional) Aquí se podría agregar lógica para notificaciones
+  });
+};
+
+/**
+ * Solicita el reemplazo de un activo.
+ * @param assetId - El ID del activo a reemplazar.
+ * @param reason - El motivo de la solicitud de reemplazo.
+ */
+export const requestAssetReplacement = async (assetId: string, reason: string): Promise<void> => {
+  const assetRef = doc(db, "assets", assetId);
+  await updateDoc(assetRef, {
+    status: 'reemplazo solicitado',
+    replacementReason: reason,
+    replacementRequestDate: Timestamp.now()
   });
 };
 
