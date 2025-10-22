@@ -58,11 +58,7 @@ import {
   Asset,
   ReplacementRequest,
   ReplacementStatus,
-  // Maintenance services
-  getStuckAssets,
-  revertAssetStatus,
-  createReplacementRequest,
-  createLogisticsRequestFromStuckAsset
+  createReplacementRequest
 } from "@/lib/services";import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function MasterPage() {
@@ -80,9 +76,6 @@ export default function MasterPage() {
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
   const [requestToActOn, setRequestToActOn] = useState<ReplacementRequest | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
-
-  // Maintenance state
-  const [stuckAssets, setStuckAssets] = useState<Asset[]>([]);
 
   
   // Dialog state for User Management
@@ -112,19 +105,17 @@ export default function MasterPage() {
     try {
       const isOriginalMaster = userData.role === 'master';
   
-          const [requests, fetchedEmployees, fetchedAssets, allSystemUsers, fetchedStuckAssets] = await Promise.all([
+          const [requests, fetchedEmployees, fetchedAssets, allSystemUsers] = await Promise.all([
             getReplacementRequestsForMaster(userData.id),
             getUsers('empleado', isOriginalMaster ? undefined : userData.id),
             getStockAssets(userData.role),
             getUsers(undefined, isOriginalMaster ? undefined : userData.id),
-            getStuckAssets()
           ]);
       
           setReplacementRequests(requests);
           setEmployees(fetchedEmployees);
           setStockAssets(fetchedAssets);
-          setAllUsers(allSystemUsers);
-          setStuckAssets(fetchedStuckAssets);    } catch (error: any) {
+          setAllUsers(allSystemUsers);    } catch (error: any) {
         console.error("Error fetching data:", error);
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudieron cargar los datos.' });
     }
@@ -224,31 +215,6 @@ export default function MasterPage() {
       toast({ variant: "destructive", title: "Error", description: "No se pudo aprobar la solicitud." });
     }
   };  
-  // --- Maintenance Handlers ---
-const handleRevertAsset = async (assetId: string) => {
-  try {
-    await revertAssetStatus(assetId);
-    toast({ title: "Activo Revertido", description: "El activo ha sido restaurado al estado 'activo'." });
-    await fetchAllData();
-  } catch (error: any) {
-    toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo revertir el activo." });
-  }
-};
-
-const handleCreateRequestManually = async (asset: Asset) => {
-  if (!asset.employeeId || !userData?.id) {
-    toast({ variant: "destructive", title: "Error", description: "El activo no tiene un empleado asignado o el master no está autenticado." });
-    return;
-  }
-  try {
-    await createLogisticsRequestFromStuckAsset(userData.id, asset);
-    toast({ title: "Solicitud Enviada a Logística", description: "Se ha generado una orden de reemplazo para logística." });
-    await fetchAllData();
-  } catch (error: any) {
-    toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo crear la solicitud para logística." });
-  }
-};
-
 const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newUserEmail || !newUserRole) {
@@ -328,7 +294,7 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
           {userData.role === 'master' && (
             <TabsTrigger value="assets">Gestión de Activos</TabsTrigger>
             )}
-            <TabsTrigger value="maintenance">Mantenimiento <Badge className="ml-2" variant="destructive">{stuckAssets.length}</Badge></TabsTrigger>        </TabsList>
+        </TabsList>
 
         <TabsContent value="assignments">
           <Card>
@@ -555,54 +521,6 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
                     <p>Próximamente: Herramientas para la gestión de activos y la creación de kits.</p>
                 </CardContent>
             </Card>
-        </TabsContent>
-        
-        <TabsContent value="maintenance">
-          <Card>
-            <CardHeader>
-              <CardTitle>Mantenimiento de Datos</CardTitle>
-              <CardDescription>
-                Activos en estado "reemplazo solicitado" del flujo de trabajo anterior. Puede revertirlos a "activo" o generar una solicitud formal para que sigan el nuevo flujo de aprobación.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Activo</TableHead>
-                    <TableHead>Empleado Asignado</TableHead>
-                    <TableHead>Motivo Original</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stuckAssets.length > 0 ? (
-                    stuckAssets.map((asset) => (
-                      <TableRow key={asset.id}>
-                        <TableCell>{asset.name} ({asset.serial || 'N/A'})</TableCell>
-                        <TableCell>{asset.employeeName}</TableCell>
-                        <TableCell>{asset.replacementReason || 'N/A'}</TableCell>
-                        <TableCell className="text-right">
-                          <Button size="sm" variant="outline" className="mr-2" onClick={() => handleRevertAsset(asset.id)}>
-                            Revertir a Activo
-                          </Button>
-                          <Button size="sm" onClick={() => handleCreateRequestManually(asset)}>
-                            Generar Solicitud
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center">
-                        No hay activos atascados.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
         </TabsContent>
         
         </Tabs>

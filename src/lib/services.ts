@@ -807,43 +807,63 @@ export const rejectAssetReceipt = async (assetId: string, reason: string, actor:
  */
 export const createReplacementRequest = async (employeeId: string, assetId: string, reason: string): Promise<void> => {
   await runTransaction(db, async (transaction) => {
+    // --- ALL READS FIRST ---
+
+    // 1. Read user document
     const userRef = doc(db, "users", employeeId);
     const userDoc = await transaction.get(userRef);
 
     if (!userDoc.exists()) {
       throw new Error("Usuario empleado no encontrado.");
     }
+    const employeeData = userDoc.data();
 
-    let employeeData = userDoc.data();
-    let masterId = employeeData.masterId;
-
-    // Lazy migration: If user has no masterId, find it from the invitation and update the user doc.
-    if (!masterId) {
-      const invitationRef = doc(db, "invitations", employeeData.email.toLowerCase());
-      const invitationDoc = await transaction.get(invitationRef);
-
-      if (invitationDoc.exists()) {
-        masterId = invitationDoc.data().invitedBy;
-        // Update the user document with the masterId for future requests.
-        transaction.update(userRef, { masterId: masterId });
-      } else {
-        throw new Error("No se pudo encontrar la invitación original para asignar un master a este usuario.");
-      }
-    }
-
+    // 2. Read asset document
     const assetRef = doc(db, "assets", assetId);
     const assetDoc = await transaction.get(assetRef);
+
     if (!assetDoc.exists()) {
       throw new Error("Activo no encontrado.");
     }
     const assetData = assetDoc.data();
+
+    // 3. Conditionally read invitation document if needed
+    let masterId = employeeData.masterId;
+    let invitationDoc = null; // Keep track of the invitation doc if we read it
+    if (!masterId && !employeeData.invitedBy) {
+      const invitationRef = doc(db, "invitations", employeeData.email.toLowerCase());
+      invitationDoc = await transaction.get(invitationRef);
+    }
+
+    // --- ALL WRITES LAST ---
+
+    // Now, determine the masterId and perform writes.
+    let masterIdFound = employeeData.masterId;
+    let needsUserUpdate = false;
+
+    if (!masterIdFound) {
+      if (employeeData.invitedBy) {
+        masterIdFound = employeeData.invitedBy;
+        needsUserUpdate = true;
+      } else if (invitationDoc && invitationDoc.exists()) {
+        masterIdFound = invitationDoc.data().invitedBy;
+        needsUserUpdate = true;
+      } else {
+        throw new Error("No se pudo encontrar el master asociado a este usuario. Ni 'masterId', ni 'invitedBy' en el perfil del usuario, ni una invitación original fueron encontrados.");
+      }
+    }
+
+    // Perform user update if we discovered the masterId in this transaction
+    if (needsUserUpdate) {
+      transaction.update(userRef, { masterId: masterIdFound });
+    }
 
     // Create the new replacement request
     const newRequestRef = doc(collection(db, "replacementRequests"));
     transaction.set(newRequestRef, {
       employeeId: employeeId,
       employeeName: employeeData.name || 'N/A',
-      masterId: masterId,
+      masterId: masterIdFound,
       assetId: assetId,
       assetName: assetData.name || 'N/A',
       serial: assetData.serial || 'N/A',
@@ -948,58 +968,7 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
     await batch.commit();
 };
 
-// ------------------- MAINTENANCE SERVICES -------------------
 
-/**
- * Gets all assets that are stuck in the 'reemplazo solicitado' status from the old workflow.
- * @returns A promise that resolves to an array of stuck assets.
- */
-export const getStuckAssets = async (): Promise<Asset[]> => {
-  const q = query(collection(db, "assets"), where("status", "==", "reemplazo solicitado"));
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Asset));
-};
-
-/**
- * Reverts a stuck asset's status back to 'activo'.
- * @param assetId - The ID of the asset to revert.
- */
-export const revertAssetStatus = async (assetId: string): Promise<void> => {
-  const assetRef = doc(db, "assets", assetId);
-  await updateDoc(assetRef, {
-    status: 'activo',
-    replacementReason: '', // Clear the old reason
-  });
-};
-
-/**
- * Creates a logistics assignment request directly from a stuck asset, bypassing the normal approval flow.
- * @param masterId The ID of the master performing the action.
- * @param asset The stuck asset object.
- */
-export const createLogisticsRequestFromStuckAsset = async (masterId: string, asset: Asset): Promise<void> => {
-  await runTransaction(db, async (transaction) => {
-    const assetRef = doc(db, "assets", asset.id);
-    
-    // 1. Update the original asset's status to 'reemplazo_en_logistica'
-    transaction.update(assetRef, { status: 'reemplazo_en_logistica' });
-
-    // 2. Create a new assignment request for logistics
-    const newAssignmentRef = doc(collection(db, "assignmentRequests"));
-    transaction.set(newAssignmentRef, {
-      assetName: `Reemplazo para: ${asset.name}`,
-      assetId: asset.id, // This is the ID of the asset to be replaced
-      employeeId: asset.employeeId,
-      employeeName: asset.employeeName,
-      masterId: masterId,
-      quantity: 1,
-      status: 'pendiente de envío',
-      type: 'reemplazo',
-      date: Timestamp.now(),
-      originalReplacementRequestId: `manual_${asset.id}`, // Create a synthetic ID
-    });
-  });
-};
 
 // ------------------- HISTORY SERVICES -------------------
 
