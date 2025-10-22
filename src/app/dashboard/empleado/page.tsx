@@ -123,8 +123,8 @@ export default function EmpleadoPage() {
     }
   };
 
-  const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente' || asset.status === 'en disputa');
-  const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente' && asset.status !== 'en disputa');
+  const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente');
+  const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente');
 
   if (loading || !userData) {
     return <div>Cargando...</div>;
