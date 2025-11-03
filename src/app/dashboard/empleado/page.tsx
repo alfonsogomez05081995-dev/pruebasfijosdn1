@@ -41,7 +41,8 @@ import {
   submitReplacementRequest,
   getPendingReplacementRequestsForEmployee,
 } from "@/lib/services";
-import { Asset, ReplacementRequest } from "@/lib/types";
+import { Asset, ReplacementRequest, AssetHistoryEvent } from "@/lib/types";
+import { formatFirebaseTimestamp } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +76,9 @@ export default function EmpleadoPage() {
   const [replacementReason, setReplacementReason] = useState(''); // Motivo (daño, robo, etc.)
   const [replacementJustification, setReplacementJustification] = useState(''); // Justificación detallada
   const [replacementImage, setReplacementImage] = useState<File | null>(null); // Archivo de imagen
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [historyAsset, setHistoryAsset] = useState<Asset | null>(null);
+  const [assetHistory, setAssetHistory] = useState<AssetHistoryEvent[]>([]);
 
   useEffect(() => {
     if (!loading && (!userData || !['master', 'empleado'].includes(userData.role))) {
@@ -190,6 +194,23 @@ export default function EmpleadoPage() {
     }
   };
 
+  const handleShowHistory = async (asset: Asset) => {
+    setHistoryAsset(asset);
+    try {
+      const sortedHistory = (asset.history || [])
+        .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis())
+        .map(event => ({
+          ...event,
+          formattedDate: formatFirebaseTimestamp(event.timestamp),
+        }));
+      setAssetHistory(sortedHistory);
+      setHistoryDialogOpen(true);
+    } catch (error) {
+      console.error("Error fetching asset history:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo cargar el historial del activo." });
+    }
+  };
+
   const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente');
   const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente');
   const pendingReplacementAssetIds = new Set(pendingRequests.map(req => req.assetId));
@@ -286,6 +307,7 @@ export default function EmpleadoPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
+                          <Button size="sm" variant="outline" className="mr-2" onClick={() => handleShowHistory(asset)}>Ver Historial</Button>
                           {asset.status === 'activo' && !pendingReplacementAssetIds.has(asset.id) && (
                             <Button size="sm" variant="outline" onClick={() => handleOpenReplacementDialog(asset)}>Solicitar Reemplazo</Button>
                           )}
@@ -397,6 +419,41 @@ export default function EmpleadoPage() {
               <Button type="submit">Enviar Solicitud</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* History Dialog */}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-[625px]">
+          <DialogHeader>
+            <DialogTitle>Historial del Activo: {historyAsset?.name}</DialogTitle>
+            <DialogDescription>
+              A continuación se muestra el historial de movimientos para el activo seleccionado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Evento</TableHead>
+                  <TableHead>Descripción</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assetHistory.map((event, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{event.formattedDate}</TableCell>
+                    <TableCell>{event.event}</TableCell>
+                    <TableCell>{event.description}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setHistoryDialogOpen(false)}>Cerrar</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

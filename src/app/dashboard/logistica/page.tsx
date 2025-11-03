@@ -93,11 +93,11 @@ export default function LogisticaPage() {
         const [assignRequests, devProcesses, allRequests] = await Promise.all([
             getAssignmentRequestsForLogistics(),
             getDevolutionProcesses(),
-            getAllAssignmentRequests(),
+            getAllAssignmentRequests(100),
         ]);
         setAssignmentRequests(assignRequests);
         setDevolutionProcesses(devProcesses);
-        setRequestHistory(allRequests);
+        setRequestHistory(allRequests.requests);
     } catch (error) {
         console.error("Error fetching data:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos.' });
@@ -166,28 +166,31 @@ export default function LogisticaPage() {
     setArchiveReason('');
   };
 
-  const handleProcessSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selectedRequest || !trackingNumber || !carrier) {
-        toast({ variant: "destructive", title: "Error", description: "La transportadora y el número de guía son obligatorios." });
-        return;
-    }
-    try {
-        if (selectedRequest.status === 'rechazado') {
-            await retryAssignment(selectedRequest.id, trackingNumber, carrier, serialNumber);
-            toast({ title: "Reenvío Procesado", description: "La solicitud ha sido actualizada y marcada como 'enviado' nuevamente." });
-        } else {
-            await processAssignmentRequest(selectedRequest.id, trackingNumber, carrier, serialNumber);
-            toast({ title: "Solicitud Procesada", description: "La solicitud ha sido actualizada y el activo asignado." });
-        }
-        setShowProcessModal(false);
-        fetchAllData();
-    } catch (error: any) {
-        console.error("Error processing request:", error);
-        toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo procesar la solicitud." });
-    }
-  };
-
+    const handleProcessSubmit = async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!selectedRequest || !trackingNumber || !carrier) {
+          toast({ variant: "destructive", title: "Error", description: "La transportadora y el número de guía son obligatorios." });
+          return;
+      }
+      if (!userData) {
+          toast({ variant: "destructive", title: "Error", description: "No se pudo verificar la identidad del usuario." });
+          return;
+      }
+      try {
+          if (selectedRequest.status === 'rechazado') {
+              await retryAssignment(selectedRequest.id, trackingNumber, carrier, { id: userData.id, name: userData.name || userData.email }, serialNumber);
+              toast({ title: "Reenvío Procesado", description: "La solicitud ha sido actualizada y marcada como 'enviado' nuevamente." });
+          } else {
+              await processAssignmentRequest(selectedRequest.id, trackingNumber, carrier, { id: userData.id, name: userData.name || userData.email }, serialNumber);
+              toast({ title: "Solicitud Procesada", description: "La solicitud ha sido actualizada y el activo asignado." });
+          }
+          setShowProcessModal(false);
+          fetchAllData();
+      } catch (error: any) {
+          console.error("Error processing request:", error);
+          toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo procesar la solicitud." });
+      }
+    };
   const handleRetrySubmit = () => {
     if (!selectedRequest) return;
     setShowRejectionModal(false);

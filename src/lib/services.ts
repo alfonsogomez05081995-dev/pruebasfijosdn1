@@ -3,9 +3,8 @@
  * Incluye la gestión de usuarios, logística, activos y más.
  */
 
-import { db, storage } from './firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDoc, Timestamp, runTransaction, setDoc, orderBy } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db } from './firebase';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDoc, Timestamp, runTransaction, setDoc, orderBy, arrayUnion, limit, startAfter } from 'firebase/firestore';
 import { formatFirebaseTimestamp } from './utils';
 import imageCompression from 'browser-image-compression';
 import { v4 as uuidv4 } from 'uuid';
@@ -25,25 +24,25 @@ import {
 
 export * from './types';
 
-// Helper to add an event to an asset's history subcollection
+// Helper to add an event to an asset's history array
 const addAssetHistoryEvent = (
   transaction: any, // Can be a Transaction or a WriteBatch
-  assetId: string,
+  assetRef: any, // Pass the DocumentReference of the asset
   event: string,
   description: string,
   actor?: { id: string; name: string }
 ) => {
-  const historyRef = doc(collection(db, `assets/${assetId}/history`));
-  const historyEvent: Partial<AssetHistoryEvent> = {
+  const historyEvent: AssetHistoryEvent = {
     timestamp: Timestamp.now(),
     event,
     description,
+    userId: actor?.id || null,
+    userName: actor?.name || 'Usuario desconocido',
   };
-  if (actor) {
-    historyEvent.userId = actor.id;
-    historyEvent.userName = actor.name;
-  }
-  transaction.set(historyRef, historyEvent);
+  // Use arrayUnion to add the new event to the history array
+  transaction.update(assetRef, {
+    history: arrayUnion(historyEvent)
+  });
 };
 
 // ------------------- USER MANAGEMENT -------------------
@@ -161,7 +160,7 @@ export const upsertAsset = async (assetData: NewAssetData): Promise<void> => {
         transaction.update(assetDoc.ref, { stock: currentStock + assetData.stock });
         addAssetHistoryEvent(
           transaction,
-          assetDoc.id,
+          assetDoc.ref,
           "Actualización de Stock",
           `Stock actualizado. Se añadieron ${assetData.stock} unidades. Nuevo stock: ${currentStock + assetData.stock}.`
         );
@@ -172,10 +171,11 @@ export const upsertAsset = async (assetData: NewAssetData): Promise<void> => {
         ...assetData,
         status: 'en stock',
         stock: isSerializable ? 1 : assetData.stock,
+        history: [], // Initialize history
       });
       addAssetHistoryEvent(
         transaction,
-        newAssetRef.id,
+        newAssetRef,
         "Creación",
         `Activo creado en stock con ${isSerializable ? `serial ${assetData.serial}` : `referencia ${assetData.reference}`}. Stock inicial: ${isSerializable ? 1 : assetData.stock}.`
       );
@@ -318,22 +318,41 @@ export const getAssignmentRequestsForLogistics = async (): Promise<AssignmentReq
 
 
 /**
- * Obtiene todas las solicitudes de asignación, independientemente de su estado.
- * @returns Una promesa que se resuelve en un array de todas las solicitudes de asignación.
+ * Obtiene una lista paginada de todas las solicitudes de asignación.
+ * @param pageSize - El número máximo de solicitudes a devolver por página.
+ * @param lastVisible - El último documento visible desde el cual comenzar la paginación.
+ * @returns Un objeto que contiene la lista de solicitudes y el último documento visible de la página actual.
  */
-export const getAllAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
-  const requestsRef = collection(db, "assignmentRequests");  
-  const q = query(requestsRef, orderBy("date", "desc"));
+export const getAllAssignmentRequests = async (
+  pageSize: number,
+  lastVisible: any = null
+): Promise<{ requests: AssignmentRequest[]; lastVisible: any }> => {
+  const requestsRef = collection(db, "assignmentRequests");
+  
+  const queryConstraints: (ReturnType<typeof orderBy> | ReturnType<typeof limit> | ReturnType<typeof startAfter>)[] = [
+    orderBy("date", "desc"),
+    limit(pageSize)
+  ];
+
+  if (lastVisible) {
+    queryConstraints.push(startAfter(lastVisible));
+  }
+
+  const q = query(requestsRef, ...queryConstraints);
+
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => {
+  const requests = querySnapshot.docs.map(doc => {
     const data = doc.data() as AssignmentRequest;
     return {
-      ...data,      
+      ...data,
       id: doc.id,
-      formattedDate: formatFirebaseTimestamp(data.date), // Fecha de Solicitud
-      formattedSentDate: formatFirebaseTimestamp(data.sentDate), // Fecha de Envío
+      formattedDate: formatFirebaseTimestamp(data.date),
+      formattedSentDate: formatFirebaseTimestamp(data.sentDate),
     };
   });
+
+  const newLastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
+  return { requests, lastVisible: newLastVisible };
 };
 
 /**
@@ -348,6 +367,7 @@ export const processAssignmentRequest = async (
   requestId: string, 
   trackingNumber: string, 
   carrier: string, 
+  actor: { id: string; name: string },
   serialNumber?: string
 ): Promise<void> => {
   await runTransaction(db, async (transaction) => {
@@ -407,12 +427,13 @@ export const processAssignmentRequest = async (
       stock: requestData.quantity, // The quantity being assigned to the employee
       originalRequestId: requestId, // <-- Link to the original request
       originalReplacementRequestId: requestData.originalReplacementRequestId || null, // <-- Propagate the replacement ID
+      history: [], // Initialize history
     });
 
     // Add history event for the newly created asset
     addAssetHistoryEvent(
       transaction,
-      newAssetForEmployeeRef.id,
+      newAssetForEmployeeRef,
       "Asignación Creada",
       `Activo enviado a ${requestData.employeeName}. Transportadora: ${carrier}, Guía: ${trackingNumber}.`
     );
@@ -440,7 +461,13 @@ export const processAssignmentRequest = async (
  * @param carrier La nueva transportadora.
  * @param serialNumber El nuevo serial, si aplica.
  */
-export const retryAssignment = async (requestId: string, trackingNumber: string, carrier: string, serialNumber?: string): Promise<void> => {
+export const retryAssignment = async (
+    requestId: string, 
+    trackingNumber: string, 
+    carrier: string, 
+    actor: { id: string; name: string },
+    serialNumber?: string
+): Promise<void> => {
     // 1. Find the disputed asset linked to this request
     const assetsQuery = query(collection(db, "assets"), where("originalRequestId", "==", requestId), where("status", "==", "en disputa"));
     const assetsSnapshot = await getDocs(assetsQuery);
@@ -470,6 +497,13 @@ export const retryAssignment = async (requestId: string, trackingNumber: string,
                 status: 'recibido pendiente',
                 rejectionReason: '' // Clear rejection reason on the asset as well
             });
+            addAssetHistoryEvent(
+                transaction,
+                assetToUpdateRef,
+                "Reintento de Envío",
+                `Logística reintentó el envío. Nueva guía: ${trackingNumber}, Transportadora: ${carrier}.`,
+                actor
+            );
         }
     });
 };
@@ -585,7 +619,7 @@ export const decommissionAsset = async (
     // Añadir un evento de historial detallado
     addAssetHistoryEvent(
       transaction,
-      assetId,
+      assetRef,
       "Activo Dado de Baja",
       `Dado de baja por ${actor.name}. Motivo: ${justification}. Evidencia: ${imageUrl.substring(0, 50)}...`,
       actor
@@ -621,7 +655,7 @@ export const verifyAssetReturn = async (processId: string, assetId: string): Pro
 
         addAssetHistoryEvent(
             transaction,
-            assetId,
+            assetRef,
             "Devolución Verificada",
             "Logística verificó la devolución del activo. El activo vuelve a estar en stock."
         );
@@ -800,7 +834,8 @@ export const approveReplacementRequest = async (requestId: string, actor: { id: 
     const requestData = requestDoc.data() as ReplacementRequest;
 
     // CORRECCIÓN: Buscar un activo genérico en stock que coincida con la referencia del activo a reemplazar.
-    const originalAssetDoc = await transaction.get(doc(db, "assets", requestData.assetId));
+    const originalAssetRef = doc(db, "assets", requestData.assetId);
+    const originalAssetDoc = await transaction.get(originalAssetRef);
     if (!originalAssetDoc.exists()) {
       throw new Error("El activo original a reemplazar no fue encontrado.");
     }
@@ -822,8 +857,7 @@ export const approveReplacementRequest = async (requestId: string, actor: { id: 
     transaction.update(requestRef, { status: 'aprobado' });
 
     // 2. Actualizar el estado del activo original (el dañado)
-    const assetRef = doc(db, "assets", requestData.assetId);
-    transaction.update(assetRef, { status: 'reemplazo_en_logistica' });
+    transaction.update(originalAssetRef, { status: 'reemplazo_en_logistica' });
 
     // 3. Crear una nueva solicitud de asignación para logística usando el activo de stock.
     const newAssignmentRef = doc(collection(db, "assignmentRequests"));
@@ -843,7 +877,7 @@ export const approveReplacementRequest = async (requestId: string, actor: { id: 
     // 4. Añadir evento de historial al activo original
     addAssetHistoryEvent(
       transaction,
-      requestData.assetId,
+      originalAssetRef,
       "Reemplazo Aprobado",
       `Master ${actor.name} aprobó la solicitud. Pasa a logística.`,
       actor
@@ -878,7 +912,7 @@ export const rejectReplacementRequest = async (requestId: string, reason: string
     // 2. Add history event to the asset
     addAssetHistoryEvent(
       transaction,
-      requestData.assetId,
+      assetRef,
       "Reemplazo Rechazado",
       `Master ${actor.name} rechazó la solicitud. Motivo: ${reason}`,
       actor
@@ -965,12 +999,12 @@ export const confirmAssetReceipt = async (assetId: string, actor: { id: string; 
     // --- FASE DE ESCRITURA ---
     // Ahora que todas las lecturas están hechas, podemos escribir.
     transaction.update(newAssetRef, { status: 'activo' });
+    addAssetHistoryEvent(transaction, newAssetRef, "Recepción Confirmada", `El empleado ${actor.name} confirmó la recepción del activo.`, actor);
 
     if (oldAssetRef) {
       transaction.update(oldAssetRef, { status: 'reemplazado' });
+      addAssetHistoryEvent(transaction, oldAssetRef, "Activo Reemplazado", `Reemplazado por un nuevo activo.`, actor);
     }
-
-    addAssetHistoryEvent(transaction, assetId, "Recepción Confirmada", `El empleado ${actor.name} confirmó la recepción del activo.`, actor);
   });
 };
 
@@ -1007,7 +1041,7 @@ export const rejectAssetReceipt = async (assetId: string, reason: string, actor:
     // 3. Add history event
     addAssetHistoryEvent(
       transaction,
-      assetId,
+      assetRef,
       "Recepción Rechazada",
       `Rechazado por ${actor.name}. Motivo: ${reason}`,
       actor
@@ -1099,7 +1133,7 @@ export const submitReplacementRequest = async (
 
     addAssetHistoryEvent(
       transaction,
-      dataForDb.assetId,
+      assetRef,
       "Solicitud de Reemplazo",
       `Empleado solicitó reemplazo. Motivo: ${dataForDb.reason}`,
       { id: dataForDb.employeeId, name: dataForDb.employeeName }
@@ -1129,14 +1163,13 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
             verified: false
         });
         // Add history event for each asset
-        const historyRef = doc(collection(db, `assets/${assetDoc.id}/history`));
-        batch.set(historyRef, {
-            timestamp: Timestamp.now(),
-            event: "Devolución Iniciada",
-            description: `Empleado ${employeeName} inició el proceso de devolución.`,
-            userId: actor.id,
-            userName: actor.name
-        });
+        addAssetHistoryEvent(
+            batch,
+            assetDoc.ref,
+            "Devolución Iniciada",
+            `Empleado ${employeeName} inició el proceso de devolución.`,
+            actor
+        );
     }
 
     const devolutionRef = doc(collection(db, "devolutionProcesses"));
@@ -1161,16 +1194,17 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
  * @returns A promise that resolves to an array of history events, ordered by date.
  */
 export const getAssetHistory = async (assetId: string): Promise<AssetHistoryEvent[]> => {
-  const historyRef = collection(db, `assets/${assetId}/history`);
-  const q = query(historyRef, orderBy("timestamp", "desc"));
-  const querySnapshot = await getDocs(q);
-  // CORRECCIÓN: Mapear y añadir la fecha formateada directamente desde el servicio.
-  return querySnapshot.docs.map(doc => {
-    const data = doc.data() as AssetHistoryEvent;
-    return {
-      ...data,
-      id: doc.id,
-      formattedDate: formatFirebaseTimestamp(data.timestamp),
-    };
-  });
+  const assetRef = doc(db, "assets", assetId);
+  const assetDoc = await getDoc(assetRef);
+  if (!assetDoc.exists() || !assetDoc.data().history) {
+    return [];
+  }
+  const history = assetDoc.data().history as AssetHistoryEvent[];
+  // Sort by timestamp descending and format date
+  return history
+    .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis())
+    .map(event => ({
+      ...event,
+      formattedDate: formatFirebaseTimestamp(event.timestamp),
+    }));
 };

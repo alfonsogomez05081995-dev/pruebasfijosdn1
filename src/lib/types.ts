@@ -32,6 +32,7 @@ assignedDate?: Timestamp;
 rejectionReason?: string;
 assignedTo?: { employeeName: string; quantity: number; serial?: string }[]; // Para agrupar asignaciones
 totalStock?: number; // Para mostrar el stock consolidado
+history?: AssetHistoryEvent[];
 }
 
 export type AssignmentStatus = 'pendiente de envío' | 'enviado' | 'pendiente por stock' | 'rechazado' | 'archivado';
@@ -97,7 +98,7 @@ export interface AssetHistoryEvent {
   timestamp: Timestamp;
   event: string;
   description: string;
-  userId?: string;
-  userName?: string;
+  userId?: string | null;
+  userName?: string | null;
   formattedDate?: string; // Campo opcional para la fecha formateada
 };
