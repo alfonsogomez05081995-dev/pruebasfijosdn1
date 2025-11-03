@@ -30,6 +30,8 @@ employeeUid?: string; // Added for security rules
 employeeName?: string;
 assignedDate?: Timestamp;
 rejectionReason?: string;
+assignedTo?: { employeeName: string; quantity: number; serial?: string }[]; // Para agrupar asignaciones
+totalStock?: number; // Para mostrar el stock consolidado
 }
 
 export type AssignmentStatus = 'pendiente de envío' | 'enviado' | 'pendiente por stock' | 'rechazado' | 'archivado';
@@ -44,8 +46,13 @@ date: Timestamp;
 status: AssignmentStatus;
 trackingNumber?: string;
 carrier?: string;
+masterId?: string; // Campo opcional para el ID del master que crea la solicitud
 masterName?: string;
 rejectionReason?: string;
+originalReplacementRequestId?: string; // Campo opcional para vincular a una solicitud de reemplazo
+formattedDate?: string; // Campo opcional para la fecha formateada
+sentDate?: Timestamp; // Fecha en que logística procesa el envío
+formattedSentDate?: string; // Fecha de envío formateada
 }
 
 export type ReplacementStatus = 'pendiente de aprobacion master' | 'aprobado' | 'rechazado';
@@ -71,6 +78,7 @@ employeeId: string;
 employeeName: string;
 status: DevolutionStatus;
 date: Timestamp;
+formattedDate?: string; // Campo opcional para la fecha formateada
 assets: { id: string; name: string; serial?: string; verified: boolean }[];
 }
 
@@ -91,4 +99,5 @@ export interface AssetHistoryEvent {
   description: string;
   userId?: string;
   userName?: string;
+  formattedDate?: string; // Campo opcional para la fecha formateada
 };

@@ -52,13 +52,14 @@ import {
   updateUser,
   deleteUser,
   getReplacementRequestsForMaster,
-  updateReplacementRequestStatus,
+  rejectReplacementRequest,  // <--- Cambiamos la importación
   sendBulkAssignmentRequests,
   getStockAssets,
+  getAssignmentRequestsForMaster,
+  approveReplacementRequest, // <-- Importamos la función correcta
   Asset,
   ReplacementRequest,
-  ReplacementStatus,
-  createReplacementRequest
+  ReplacementStatus
 } from "@/lib/services";import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function MasterPage() {
@@ -71,6 +72,7 @@ export default function MasterPage() {
   const [employees, setEmployees] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
+  const [assignmentHistory, setAssignmentHistory] = useState<any[]>([]);
 
   // Dialog state for Rejection
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
@@ -89,6 +91,10 @@ export default function MasterPage() {
   const [assignmentRows, setAssignmentRows] = useState([{ id: 1, assetId: '', quantity: 1 }]);
 
   // User form state
+  const [justification, setJustification] = useState('');
+  const [assignmentType, setAssignmentType] = useState<'primera_vez' | 'reposicion' | ''>('');
+
+  // User form state
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState<Role | ''| undefined>('');
@@ -104,18 +110,20 @@ export default function MasterPage() {
     if (!userData) return;
     try {
       const isOriginalMaster = userData.role === 'master';
-  
-          const [requests, fetchedEmployees, fetchedAssets, allSystemUsers] = await Promise.all([
+
+          const [requests, fetchedEmployees, fetchedAssets, allSystemUsers, history] = await Promise.all([
             getReplacementRequestsForMaster(userData.id),
             getUsers('empleado', isOriginalMaster ? undefined : userData.id),
             getStockAssets(userData.role),
             getUsers(undefined, isOriginalMaster ? undefined : userData.id),
+            getAssignmentRequestsForMaster(userData.id),
           ]);
       
           setReplacementRequests(requests);
           setEmployees(fetchedEmployees);
           setStockAssets(fetchedAssets);
-          setAllUsers(allSystemUsers);    } catch (error: any) {
+          setAllUsers(allSystemUsers);
+          setAssignmentHistory(history);    } catch (error: any) {
         console.error("Error fetching data:", error);
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudieron cargar los datos.' });
     }
@@ -149,6 +157,11 @@ export default function MasterPage() {
       return;
     }
 
+    if (!assignmentType || !justification) {
+      toast({ variant: "destructive", title: "Error", description: "Debe seleccionar un tipo de asignación y proporcionar una justificación." });
+      return;
+    }
+
     const invalidRows = assignmentRows.filter(row => !row.assetId || row.quantity <= 0);
     if (invalidRows.length > 0) {
       toast({ variant: "destructive", title: "Error", description: "Por favor, complete todos los campos de activos y asegúrese que la cantidad sea mayor a 0." });
@@ -163,6 +176,10 @@ export default function MasterPage() {
         assetId: row.assetId,
         assetName: asset?.name || '',
         quantity: Number(row.quantity),
+        justification,
+        assignmentType,
+        masterId: userData.id,
+        masterName: userData.name,
       };
     });
 
@@ -172,6 +189,8 @@ export default function MasterPage() {
       // Reset form
       setSelectedEmployee('');
       setAssignmentRows([{ id: 1, assetId: '', quantity: 1 }]);
+      setJustification('');
+      setAssignmentType('');
       await fetchAllData();
     } catch (error: any) {
       console.error("Error en asignación múltiple:", error);
@@ -194,7 +213,7 @@ export default function MasterPage() {
       return;
     }
     try {
-      await updateReplacementRequestStatus(requestToActOn.id, 'rechazado', { id: userData.id, name: userData.name }, rejectionReason);
+      await rejectReplacementRequest(requestToActOn.id, rejectionReason, { id: userData.id, name: userData.name }); // <-- Llamada directa
       toast({ title: "Solicitud Rechazada" });
       setRejectionDialogOpen(false);
       await fetchAllData();
@@ -207,7 +226,7 @@ export default function MasterPage() {
   const handleApproveRequest = async (id: string) => {
     if (!userData) return;
     try {
-      await updateReplacementRequestStatus(id, 'aprobado', { id: userData.id, name: userData.name });
+      await approveReplacementRequest(id, { id: userData.id, name: userData.name }); 
       toast({ title: `Solicitud Aprobada` });
       await fetchAllData();
     } catch (error: any) {
@@ -287,10 +306,11 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     <>
       <h1 className="text-lg font-semibold md:text-2xl mb-4">Panel del Master</h1>
       <Tabs defaultValue="assignments" className="w-full">
-        <TabsList className={`grid w-full ${userData.role === 'master' ? 'grid-cols-4' : 'grid-cols-3'}`}>
+        <TabsList className={`grid w-full ${userData.role === 'master' ? 'grid-cols-5' : 'grid-cols-4'}`}>
           <TabsTrigger value="assignments">Asignaciones</TabsTrigger>
           <TabsTrigger value="requests">Solicitudes</TabsTrigger>
           <TabsTrigger value="users">Gestión de Usuarios</TabsTrigger>
+          <TabsTrigger value="history">Historial de Asignaciones</TabsTrigger>
           {userData.role === 'master' && (
             <TabsTrigger value="assets">Gestión de Activos</TabsTrigger>
             )}
@@ -317,6 +337,30 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="assignmentType">Tipo de Asignación</Label>
+                    <Select onValueChange={(value) => setAssignmentType(value as any)} value={assignmentType} required>
+                      <SelectTrigger id="assignmentType">
+                        <SelectValue placeholder="Seleccione el tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="primera_vez">Asignación por Primera Vez</SelectItem>
+                        <SelectItem value="reposicion">Reposición</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="justification">Justificación de la Asignación</Label>
+                    <Textarea
+                      id="justification"
+                      placeholder="Describa por qué se realiza esta asignación..."
+                      value={justification}
+                      onChange={(e) => setJustification(e.target.value)}
+                      required
+                    />
                   </div>
 
                   <div className="grid gap-4">
@@ -380,7 +424,8 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
                     <TableHead>Empleado</TableHead>
                     <TableHead>Activo</TableHead>
                     <TableHead>Motivo</TableHead>
-                    <TableHead>Justificación</TableHead>
+                    <TableHead>Justificación (Texto)</TableHead>
+                    <TableHead>Imagen</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -390,6 +435,9 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
                       <TableCell>{request.employeeName}</TableCell>
                       <TableCell>{request.assetName} ({request.serial})</TableCell>
                       <TableCell>{request.reason}</TableCell>
+                      <TableCell className="max-w-[200px] truncate" title={request.justification || 'No registrada'}>
+                        {request.justification || 'N/A'}
+                      </TableCell>
                       <TableCell>
                         <a href={request.imageUrl} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">
                           Ver Imagen <ExternalLink className="h-4 w-4" />
@@ -503,6 +551,51 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="history">
+          <Card>
+            <CardHeader>
+              <CardTitle>Historial de Asignaciones</CardTitle>
+              <CardDescription>
+                Aquí puede ver el estado de todas las solicitudes de asignación que ha creado.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Empleado</TableHead>
+                    <TableHead>Activo</TableHead>
+                    <TableHead className="hidden md:table-cell">Cantidad</TableHead>
+                    <TableHead className="hidden lg:table-cell">Tipo</TableHead>
+                    <TableHead>Justificación</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Guía</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {assignmentHistory.length > 0 ? assignmentHistory.map((req) => (
+                    <TableRow key={req.id}>
+                      <TableCell>{req.date ? new Date(req.date.seconds * 1000).toLocaleDateString() : 'N/A'}</TableCell>
+                      <TableCell>{req.employeeName}</TableCell>
+                      <TableCell>{req.assetName}</TableCell>
+                      <TableCell className="hidden md:table-cell">{req.quantity}</TableCell>
+                      <TableCell className="hidden lg:table-cell">{req.assignmentType === 'primera_vez' ? 'Primera Vez' : req.assignmentType === 'reposicion' ? 'Reposición' : 'N/A'}</TableCell>
+                      <TableCell className="max-w-[150px] truncate" title={req.justification || 'No registrada'}>{req.justification || 'N/A'}</TableCell>
+                      <TableCell>
+                        <Badge variant={req.status === 'enviado' ? 'default' : req.status === 'rechazado' ? 'destructive' : 'secondary'}>{req.status}</Badge>
+                      </TableCell>
+                      <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
+                    </TableRow>
+                  )) : (
+                    <TableRow><TableCell colSpan={8} className="text-center">No hay historial de asignaciones.</TableCell></TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

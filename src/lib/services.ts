@@ -6,6 +6,8 @@
 import { db, storage } from './firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDoc, Timestamp, runTransaction, setDoc, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { formatFirebaseTimestamp } from './utils';
+import imageCompression from 'browser-image-compression';
 import { v4 as uuidv4 } from 'uuid';
 import {
     Role,
@@ -164,7 +166,7 @@ export const upsertAsset = async (assetData: NewAssetData): Promise<void> => {
           `Stock actualizado. Se añadieron ${assetData.stock} unidades. Nuevo stock: ${currentStock + assetData.stock}.`
         );
       }
-    } else {
+    } else { // Si no existe, se crea un nuevo activo
       const newAssetRef = doc(collection(db, "assets"));
       transaction.set(newAssetRef, {
         ...assetData,
@@ -207,32 +209,58 @@ export const addAsset = async (assetData: NewAssetData): Promise<void> => {
  * @param userRole El rol del usuario que realiza la solicitud.
  * @returns Una promesa que se resuelve en un array de objetos de activo.
  */
-export const getInventoryItems = async (userRole: Role): Promise<Asset[]> => {
-  const assetsRef = collection(db, "assets"); // Corregido: usar la colección "assets"
-  let q;
-
-  // La lógica de filtrado ahora es idéntica a getStockAssets para consistencia.
-  switch (userRole) {
-    case "master_it":
-      q = query(assetsRef, where("tipo", "==", "equipo_de_computo"));
-      break;
-    case "master_campo":
-    case "master_depot":
-      q = query(assetsRef, where("tipo", "in", ["herramienta_electrica", "herramienta_manual"]));
-      break;
-    case "logistica":
-    case "master":
-      // Los roles Master y Logistica pueden ver todos los activos sin filtrar por categoría.
-      q = query(assetsRef);
-      break;
-    default:
-      // Para cualquier otro rol, o si no se proporciona un rol, devuelve un array vacío.
-      return [];
-  }
-
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Asset));
-};
+export const getInventoryItems = async (userRole: Role): Promise<Asset[]> => {  
+    const assetsRef = collection(db, "assets");
+    let q;
+  
+    // 1. Filtrar activos según el rol del usuario
+    switch (userRole) {
+      case "master_it":
+        q = query(assetsRef, where("tipo", "==", "equipo_de_computo"));
+        break;
+      case "master_campo":
+      case "master_depot":
+        q = query(assetsRef, where("tipo", "in", ["herramienta_electrica", "herramienta_manual"]));
+        break;
+      case "logistica":
+      case "master":
+        q = query(assetsRef);
+        break;
+      default:
+        return [];
+    }
+  
+    const querySnapshot = await getDocs(q);
+    const allAssets = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Asset));
+  
+    // 2. Separar activos serializados y no serializados
+    const serializedAssets: Asset[] = [];
+    const nonSerializedAssets: { [reference: string]: Asset } = {};
+  
+    allAssets.forEach(asset => {
+      const isSerializable = ['equipo_de_computo', 'herramienta_electrica'].includes(asset.tipo);
+  
+      if (isSerializable) {
+        // Los activos serializados se tratan como ítems únicos.
+        serializedAssets.push(asset);
+      } else {
+        // Los activos no serializados se agrupan por referencia.
+        const ref = asset.reference || asset.name;
+        if (!nonSerializedAssets[ref]) {
+          nonSerializedAssets[ref] = { ...asset, id: ref, totalStock: 0, assignedTo: [] };
+        }
+        if (asset.status === 'en stock') {
+          nonSerializedAssets[ref].totalStock! += asset.stock || 0;
+        } else if (asset.employeeName) {
+          nonSerializedAssets[ref].assignedTo!.push({ employeeName: asset.employeeName, quantity: asset.stock || 1 });
+        }
+      }
+    });
+  
+    // 3. Combinar ambos resultados
+    const consolidatedList = Object.values(nonSerializedAssets);
+    return [...serializedAssets, ...consolidatedList];
+  };
 
 /**
  * Actualiza los datos de un activo específico.
@@ -278,7 +306,14 @@ export const getAssignmentRequestsForLogistics = async (): Promise<AssignmentReq
   const requestsRef = collection(db, "assignmentRequests");
   const q = query(requestsRef, where("status", "in", ["pendiente de envío", "rechazado"]));
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
+  return querySnapshot.docs.map(doc => {
+    const data = doc.data() as AssignmentRequest;
+    return {
+      ...data,
+      id: doc.id,
+      formattedDate: formatFirebaseTimestamp(data.date),
+    };
+  });
 };
 
 
@@ -287,9 +322,18 @@ export const getAssignmentRequestsForLogistics = async (): Promise<AssignmentReq
  * @returns Una promesa que se resuelve en un array de todas las solicitudes de asignación.
  */
 export const getAllAssignmentRequests = async (): Promise<AssignmentRequest[]> => {
-  const requestsRef = collection(db, "assignmentRequests");
-  const querySnapshot = await getDocs(requestsRef);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssignmentRequest));
+  const requestsRef = collection(db, "assignmentRequests");  
+  const q = query(requestsRef, orderBy("date", "desc"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => {
+    const data = doc.data() as AssignmentRequest;
+    return {
+      ...data,      
+      id: doc.id,
+      formattedDate: formatFirebaseTimestamp(data.date), // Fecha de Solicitud
+      formattedSentDate: formatFirebaseTimestamp(data.sentDate), // Fecha de Envío
+    };
+  });
 };
 
 /**
@@ -329,6 +373,10 @@ export const processAssignmentRequest = async (
     if (!stockAssetDoc.exists()) {
       throw new Error("Activo en stock no encontrado.");
     }
+    // CORRECCIÓN: Asegurarse de que el activo que se va a asignar esté realmente en stock.
+    if (stockAssetDoc.data().status !== 'en stock') {
+      throw new Error("Activo en stock no encontrado.");
+    }
     const stockAssetData = stockAssetDoc.data();
 
     // 4. Validate stock and serial number
@@ -358,6 +406,7 @@ export const processAssignmentRequest = async (
       assignedDate: Timestamp.now(),
       stock: requestData.quantity, // The quantity being assigned to the employee
       originalRequestId: requestId, // <-- Link to the original request
+      originalReplacementRequestId: requestData.originalReplacementRequestId || null, // <-- Propagate the replacement ID
     });
 
     // Add history event for the newly created asset
@@ -376,6 +425,7 @@ export const processAssignmentRequest = async (
       status: 'enviado',
       trackingNumber,
       carrier,
+      sentDate: Timestamp.now(), // <-- CORRECCIÓN: Guardar la fecha de envío
     });
   });
 };
@@ -430,10 +480,43 @@ export const retryAssignment = async (requestId: string, trackingNumber: string,
  * @param reason El motivo por el cual se archiva.
  */
 export const archiveAssignment = async (requestId: string, reason: string): Promise<void> => {
-    const requestRef = doc(db, "assignmentRequests", requestId);
-    await updateDoc(requestRef, {
-        status: 'archivado',
-        archiveReason: reason
+    await runTransaction(db, async (transaction) => {
+        const requestRef = doc(db, "assignmentRequests", requestId);
+        const requestDoc = await transaction.get(requestRef);
+
+        if (!requestDoc.exists()) {
+            throw new Error("La solicitud de asignación no fue encontrada.");
+        }
+        const requestData = requestDoc.data();
+
+        // 1. Encontrar el activo en disputa asociado a esta solicitud
+        const disputedAssetQuery = query(
+            collection(db, "assets"),
+            where("originalRequestId", "==", requestId),
+            where("status", "==", "en disputa")
+        );
+        const disputedAssetsSnapshot = await getDocs(disputedAssetQuery);
+
+        if (!disputedAssetsSnapshot.empty) {
+            const disputedAssetDoc = disputedAssetsSnapshot.docs[0];
+            const stockAssetRef = doc(db, "assets", requestData.assetId);
+            const stockAssetDoc = await transaction.get(stockAssetRef);
+
+            if (stockAssetDoc.exists()) {
+                // 2. Revertir el stock del activo original
+                const currentStock = stockAssetDoc.data().stock || 0;
+                transaction.update(stockAssetRef, { stock: currentStock + requestData.quantity });
+            }
+
+            // 3. Eliminar el activo que estaba "en disputa" ya que nunca se entregó
+            transaction.delete(disputedAssetDoc.ref);
+        }
+
+        // 4. Actualizar la solicitud original a 'archivado'
+        transaction.update(requestRef, {
+            status: 'archivado',
+            archiveReason: reason
+        });
     });
 };
 
@@ -445,7 +528,69 @@ export const archiveAssignment = async (requestId: string, reason: string): Prom
 export const getDevolutionProcesses = async (): Promise<DevolutionProcess[]> => {
     const q = query(collection(db, "devolutionProcesses"), where("status", "==", "iniciado"));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DevolutionProcess));
+    return querySnapshot.docs.map(doc => {
+        const data = doc.data() as DevolutionProcess;
+        return {
+            ...data,
+            id: doc.id,
+            formattedDate: formatFirebaseTimestamp(data.date),
+        };
+    });
+};
+
+/**
+ * Da de baja un activo devuelto, adjuntando una justificación y una imagen de evidencia.
+ * @param processId - El ID del proceso de devolución.
+ * @param assetId - El ID del activo a dar de baja.
+ * @param justification - El motivo para dar de baja el activo.
+ * @param imageFile - El archivo de imagen como evidencia.
+ * @param actor - El usuario de logística que realiza la acción.
+ */
+export const decommissionAsset = async (
+  processId: string,
+  assetId: string,
+  justification: string,
+  imageFile: File,
+  actor: { id: string; name: string }
+): Promise<void> => {
+  // 1. Comprimir y convertir la imagen a Base64
+  const options = {
+    maxSizeMB: 0.5,
+    maxWidthOrHeight: 800,
+    useWebWorker: true,
+  };
+  const compressedFile = await imageCompression(imageFile, options);
+  const imageUrl = await fileToBase64(compressedFile);
+
+  // 2. Ejecutar la transacción en Firestore
+  await runTransaction(db, async (transaction) => {
+    const processRef = doc(db, "devolutionProcesses", processId);
+    const assetRef = doc(db, "assets", assetId);
+
+    const processDoc = await transaction.get(processRef);
+    if (!processDoc.exists()) {
+      throw new Error("Proceso de devolución no encontrado.");
+    }
+
+    // Marcar el activo como verificado/procesado en el documento de devolución
+    const processData = processDoc.data() as DevolutionProcess;
+    const updatedAssets = processData.assets.map(asset =>
+      asset.id === assetId ? { ...asset, verified: true } : asset
+    );
+    transaction.update(processRef, { assets: updatedAssets });
+
+    // Actualizar el estado del activo a 'baja'
+    transaction.update(assetRef, { status: 'baja', stock: 0, employeeId: '', employeeName: '' });
+
+    // Añadir un evento de historial detallado
+    addAssetHistoryEvent(
+      transaction,
+      assetId,
+      "Activo Dado de Baja",
+      `Dado de baja por ${actor.name}. Motivo: ${justification}. Evidencia: ${imageUrl.substring(0, 50)}...`,
+      actor
+    );
+  });
 };
 
 /**
@@ -456,6 +601,7 @@ export const getDevolutionProcesses = async (): Promise<DevolutionProcess[]> => 
  */
 export const verifyAssetReturn = async (processId: string, assetId: string): Promise<void> => {
     await runTransaction(db, async (transaction) => {
+        // Esta función ahora solo maneja el retorno a stock.
         const processRef = doc(db, "devolutionProcesses", processId);
         const assetRef = doc(db, "assets", assetId);
 
@@ -470,7 +616,8 @@ export const verifyAssetReturn = async (processId: string, assetId: string): Pro
         );
 
         transaction.update(processRef, { assets: updatedAssets });
-        transaction.update(assetRef, { status: 'en stock', employeeId: ' ', employeeName: ' ' });
+        // Se asegura de que el stock sea 1 si es un activo serializable, o se mantiene si no lo es.
+        transaction.update(assetRef, { status: 'en stock', employeeId: '', employeeName: '' });
 
         addAssetHistoryEvent(
             transaction,
@@ -559,6 +706,7 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
     transaction.set(newRequestRef, {
       ...request,
       date: Timestamp.now(),
+      masterId: request.masterId, // <-- CORRECCIÓN: Asegurar que el masterId se guarde.
       status: newStatus,
     });
 
@@ -577,6 +725,10 @@ export const sendBulkAssignmentRequests = async (
     assetId: string;
     assetName: string;
     quantity: number;
+    justification: string;
+    assignmentType: string;
+    masterId: string;
+    masterName: string;
   }[]
 ): Promise<void> => {
   const batch = writeBatch(db);
@@ -595,6 +747,26 @@ export const sendBulkAssignmentRequests = async (
 
   await batch.commit();
 };
+
+/**
+ * Obtiene el historial de solicitudes de asignación para un master específico.
+ * @param masterId - El ID del master.
+ * @returns Una promesa que se resuelve en un array de solicitudes de asignación.
+ */
+export const getAssignmentRequestsForMaster = async (masterId: string): Promise<AssignmentRequest[]> => {
+  const requestsRef = collection(db, "assignmentRequests");
+  const q = query(requestsRef, where("masterId", "==", masterId), orderBy("date", "desc"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => {
+    const data = doc.data() as AssignmentRequest;
+    return {
+      ...data,
+      id: doc.id,
+      formattedDate: formatFirebaseTimestamp(data.date),
+    };
+  });
+};
+
 
 /**
  * Obtiene las solicitudes de reemplazo pendientes para un master específico.
@@ -627,29 +799,48 @@ export const approveReplacementRequest = async (requestId: string, actor: { id: 
 
     const requestData = requestDoc.data() as ReplacementRequest;
 
-    // 1. Update replacement request status
+    // CORRECCIÓN: Buscar un activo genérico en stock que coincida con la referencia del activo a reemplazar.
+    const originalAssetDoc = await transaction.get(doc(db, "assets", requestData.assetId));
+    if (!originalAssetDoc.exists()) {
+      throw new Error("El activo original a reemplazar no fue encontrado.");
+    }
+    const originalAssetData = originalAssetDoc.data();
+
+    const stockAssetQuery = query(
+      collection(db, "assets"),
+      where("reference", "==", originalAssetData.reference),
+      where("status", "==", "en stock"),
+      where("stock", ">", 0)
+    );
+    const stockAssetsSnapshot = await getDocs(stockAssetQuery);
+    if (stockAssetsSnapshot.empty) {
+      throw new Error(`No hay stock disponible para el reemplazo del activo con referencia '${originalAssetData.reference}'.`);
+    }
+    const stockAssetForReplacement = stockAssetsSnapshot.docs[0]; // Tomar la primera unidad disponible en stock.
+
+    // 1. Actualizar el estado de la solicitud de reemplazo
     transaction.update(requestRef, { status: 'aprobado' });
 
-    // 2. Update the original asset's status
+    // 2. Actualizar el estado del activo original (el dañado)
     const assetRef = doc(db, "assets", requestData.assetId);
     transaction.update(assetRef, { status: 'reemplazo_en_logistica' });
 
-    // 3. Create a new assignment request for logistics
+    // 3. Crear una nueva solicitud de asignación para logística usando el activo de stock.
     const newAssignmentRef = doc(collection(db, "assignmentRequests"));
     transaction.set(newAssignmentRef, {
-      assetName: `Reemplazo para: ${requestData.assetName}`,
-      assetId: requestData.assetId, // This is the ID of the asset to be replaced
+      assetName: stockAssetForReplacement.data().name,
+      assetId: stockAssetForReplacement.id, // ID del activo genérico en stock
       employeeId: requestData.employeeId,
       employeeName: requestData.employeeName,
       masterId: requestData.masterId,
       quantity: 1, // Replacements are one-to-one
       status: 'pendiente de envío',
       type: 'reemplazo',
-      date: Timestamp.now(),
-      originalReplacementRequestId: requestId,
+      date: Timestamp.now(), // El campo que faltaba
+      originalReplacementRequestId: requestId, // <-- This is correct
     });
 
-    // 4. Add history event
+    // 4. Añadir evento de historial al activo original
     addAssetHistoryEvent(
       transaction,
       requestData.assetId,
@@ -679,6 +870,10 @@ export const rejectReplacementRequest = async (requestId: string, reason: string
       status: 'rechazado',
       rejectionReason: reason,
     });
+
+    // 2. Revert original asset's status back to 'activo'
+    const assetRef = doc(db, "assets", requestData.assetId);
+    transaction.update(assetRef, { status: 'activo' });
 
     // 2. Add history event to the asset
     addAssetHistoryEvent(
@@ -745,15 +940,37 @@ export const getPendingReplacementRequestsForEmployee = async (employeeId: strin
  */
 export const confirmAssetReceipt = async (assetId: string, actor: { id: string; name: string }): Promise<void> => {
   await runTransaction(db, async (transaction) => {
-    const assetRef = doc(db, "assets", assetId);
-    transaction.update(assetRef, { status: 'activo' });
-    addAssetHistoryEvent(
-      transaction,
-      assetId,
-      "Recepción Confirmada",
-      `El empleado ${actor.name} confirmó la recepción del activo.`,
-      actor
-    );
+    // --- FASE DE LECTURA ---
+    // Todas las lecturas deben ocurrir antes que cualquier escritura.
+    const newAssetRef = doc(db, "assets", assetId);
+    const newAssetDoc = await transaction.get(newAssetRef);
+
+    if (!newAssetDoc.exists()) {
+      throw new Error("El activo que intenta confirmar no fue encontrado.");
+    }
+
+    const newAssetData = newAssetDoc.data();
+    let oldAssetRef: any = null;
+
+    // Si es un reemplazo, leemos la solicitud original para encontrar el activo antiguo.
+    if (newAssetData.originalReplacementRequestId) {
+      const replacementRequestRef = doc(db, "replacementRequests", newAssetData.originalReplacementRequestId);
+      const replacementRequestDoc = await transaction.get(replacementRequestRef);
+      if (replacementRequestDoc.exists()) {
+        const oldAssetId = replacementRequestDoc.data().assetId;
+        oldAssetRef = doc(db, "assets", oldAssetId);
+      }
+    }
+
+    // --- FASE DE ESCRITURA ---
+    // Ahora que todas las lecturas están hechas, podemos escribir.
+    transaction.update(newAssetRef, { status: 'activo' });
+
+    if (oldAssetRef) {
+      transaction.update(oldAssetRef, { status: 'reemplazado' });
+    }
+
+    addAssetHistoryEvent(transaction, assetId, "Recepción Confirmada", `El empleado ${actor.name} confirmó la recepción del activo.`, actor);
   });
 };
 
@@ -806,83 +1023,10 @@ export const rejectAssetReceipt = async (assetId: string, reason: string, actor:
  * @throws Si el empleado o el activo no se encuentran, o si el empleado no tiene un master asociado.
  */
 export const createReplacementRequest = async (employeeId: string, assetId: string, reason: string): Promise<void> => {
-  await runTransaction(db, async (transaction) => {
-    // --- ALL READS FIRST ---
-
-    // 1. Read user document
-    const userRef = doc(db, "users", employeeId);
-    const userDoc = await transaction.get(userRef);
-
-    if (!userDoc.exists()) {
-      throw new Error("Usuario empleado no encontrado.");
-    }
-    const employeeData = userDoc.data();
-
-    // 2. Read asset document
-    const assetRef = doc(db, "assets", assetId);
-    const assetDoc = await transaction.get(assetRef);
-
-    if (!assetDoc.exists()) {
-      throw new Error("Activo no encontrado.");
-    }
-    const assetData = assetDoc.data();
-
-    // 3. Conditionally read invitation document if needed
-    let masterId = employeeData.masterId;
-    let invitationDoc = null; // Keep track of the invitation doc if we read it
-    if (!masterId && !employeeData.invitedBy) {
-      const invitationRef = doc(db, "invitations", employeeData.email.toLowerCase());
-      invitationDoc = await transaction.get(invitationRef);
-    }
-
-    // --- ALL WRITES LAST ---
-
-    // Now, determine the masterId and perform writes.
-    let masterIdFound = employeeData.masterId;
-    let needsUserUpdate = false;
-
-    if (!masterIdFound) {
-      if (employeeData.invitedBy) {
-        masterIdFound = employeeData.invitedBy;
-        needsUserUpdate = true;
-      } else if (invitationDoc && invitationDoc.exists()) {
-        masterIdFound = invitationDoc.data().invitedBy;
-        needsUserUpdate = true;
-      } else {
-        throw new Error("No se pudo encontrar el master asociado a este usuario. Ni 'masterId', ni 'invitedBy' en el perfil del usuario, ni una invitación original fueron encontrados.");
-      }
-    }
-
-    // Perform user update if we discovered the masterId in this transaction
-    if (needsUserUpdate) {
-      transaction.update(userRef, { masterId: masterIdFound });
-    }
-
-    // Create the new replacement request
-    const newRequestRef = doc(collection(db, "replacementRequests"));
-    transaction.set(newRequestRef, {
-      employeeId: employeeId,
-      employeeName: employeeData.name || 'N/A',
-      masterId: masterIdFound,
-      assetId: assetId,
-      assetName: assetData.name || 'N/A',
-      serial: assetData.serial || 'N/A',
-      reason: reason,
-      justification: '',
-      imageUrl: '',
-      date: Timestamp.now(),
-      status: 'pendiente de aprobacion master',
-    });
-
-    // Add history event to the asset
-    addAssetHistoryEvent(
-      transaction,
-      assetId,
-      "Solicitud de Reemplazo",
-      `Empleado solicitó reemplazo. Motivo: ${reason}`,
-      { id: employeeId, name: employeeData.name || 'N/A' }
-    );
-  });
+  // This function is now effectively replaced by submitReplacementRequest
+  // but we keep it to avoid breaking changes if it's called elsewhere.
+  // The new logic is in submitReplacementRequest.
+  console.warn("createReplacementRequest is deprecated. Use submitReplacementRequest instead.");
 };
 
 /**
@@ -891,39 +1035,78 @@ export const createReplacementRequest = async (employeeId: string, assetId: stri
  * @returns Una promesa que se resuelve en el objeto del activo o null si no se encuentra.
  */
 export const getAssetById = async (assetId: string): Promise<Asset | null> => {
-  const docSnap = await getDoc(doc(db, "assets", assetId));
-  if (!docSnap.exists()) return null;
-  return { id: docSnap.id, ...docSnap.data() } as Asset;
+    const docSnap = await getDoc(doc(db, "assets", assetId));
+    if (!docSnap.exists()) return null;
+    return { id: docSnap.id, ...docSnap.data() } as Asset;
 };
 
 /**
- * Envía una solicitud de reemplazo de activo.
- * @param requestData - Los datos de la solicitud, incluyendo opcionalmente un archivo de imagen.
+ * Envía una solicitud de reemplazo. Sube una imagen de justificación directamente
+ * a Firebase Storage y luego crea el documento de solicitud en Firestore dentro de una transacción.
+ * @param requestData - Los datos de la solicitud, incluyendo el archivo de imagen.
  */
-export const submitReplacementRequest = async (requestData: Omit<ReplacementRequest, 'id' | 'date' | 'status' | 'imageUrl'> & { imageFile?: File }): Promise<void> => {
-  let imageUrl = '';
-  if (requestData.imageFile) {
-    const storageRef = ref(storage, `justifications/${uuidv4()}-${requestData.imageFile.name}`);
-    const snapshot = await uploadBytes(storageRef, requestData.imageFile);
-    imageUrl = await getDownloadURL(snapshot.ref);
-  }
 
-  const { imageFile, ...data } = requestData;
-
-  await addDoc(collection(db, "replacementRequests"), {
-    ...data,
-    imageUrl,
-    date: Timestamp.now(),
-    status: 'pendiente'
+// Helper para convertir un archivo a Base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
   });
 };
 
-/**
- * Inicia el proceso de devolución de todos los activos de un empleado.
- * @param employeeId - El ID del empleado que inicia la devolución.
- * @param employeeName - El nombre del empleado.
- * @throws Si el empleado no tiene activos para devolver.
- */
+export const submitReplacementRequest = async (
+  requestData: Omit<ReplacementRequest, 'id' | 'date' | 'status' | 'imageUrl' | 'masterId'> & { imageFile: File }
+): Promise<void> => {
+  const { imageFile, ...dataForDb } = requestData;
+
+  if (!imageFile) {
+    throw new Error("No se proporcionó ningún archivo de imagen para la justificación.");
+  }
+
+  // Paso 1: Comprimir la imagen en el cliente antes de convertirla.
+  const options = {
+    maxSizeMB: 0.5, // Apuntar a un tamaño máximo de 0.5 MB
+    maxWidthOrHeight: 800, // Redimensionar a un máximo de 800px en el lado más largo
+    useWebWorker: true, // Usar Web Worker para no bloquear la UI
+  };
+
+  let compressedFile;
+  try {
+    compressedFile = await imageCompression(imageFile, options);
+  } catch (error) {
+    throw new Error("No se pudo comprimir la imagen. Por favor, intente con otra imagen.");
+  }
+
+  // Paso 2: Convertir la imagen comprimida a una cadena Base64.
+  const imageUrl = await fileToBase64(compressedFile);
+
+  // Paso 3: Ejecutar la transacción de Firestore, guardando la cadena Base64 en el campo imageUrl.
+  await runTransaction(db, async (transaction) => {
+    const userRef = doc(db, "users", dataForDb.employeeId);
+    const userDoc = await transaction.get(userRef);
+    if (!userDoc.exists() || !userDoc.data()?.invitedBy) {
+      throw new Error("No se pudo encontrar el master asociado a este usuario.");
+    }
+    const masterId = userDoc.data().invitedBy;
+
+    const newRequestRef = doc(collection(db, "replacementRequests"));
+    transaction.set(newRequestRef, { ...dataForDb, masterId, imageUrl, date: Timestamp.now(), status: 'pendiente de aprobacion master' });
+
+    const assetRef = doc(db, "assets", dataForDb.assetId);
+    transaction.update(assetRef, { status: 'reemplazo_solicitado' });
+
+    addAssetHistoryEvent(
+      transaction,
+      dataForDb.assetId,
+      "Solicitud de Reemplazo",
+      `Empleado solicitó reemplazo. Motivo: ${dataForDb.reason}`,
+      { id: dataForDb.employeeId, name: dataForDb.employeeName }
+    );
+  });
+};
+
 export const initiateDevolutionProcess = async (employeeId: string, employeeName: string): Promise<void> => {
     const assetsToReturnQuery = query(collection(db, "assets"), where("employeeId", "==", employeeId), where("status", "==", "activo"));
     const assetsSnapshot = await getDocs(assetsToReturnQuery);
@@ -981,5 +1164,13 @@ export const getAssetHistory = async (assetId: string): Promise<AssetHistoryEven
   const historyRef = collection(db, `assets/${assetId}/history`);
   const q = query(historyRef, orderBy("timestamp", "desc"));
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AssetHistoryEvent));
+  // CORRECCIÓN: Mapear y añadir la fecha formateada directamente desde el servicio.
+  return querySnapshot.docs.map(doc => {
+    const data = doc.data() as AssetHistoryEvent;
+    return {
+      ...data,
+      id: doc.id,
+      formattedDate: formatFirebaseTimestamp(data.timestamp),
+    };
+  });
 };

@@ -26,12 +26,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { getMyAssignedAssets, confirmAssetReceipt, rejectAssetReceipt, initiateDevolutionProcess, createReplacementRequest, getPendingReplacementRequestsForEmployee, Asset, ReplacementRequest } from "@/lib/services";
+import {
+  getMyAssignedAssets,
+  confirmAssetReceipt,
+  rejectAssetReceipt,
+  initiateDevolutionProcess,
+  submitReplacementRequest,
+  getPendingReplacementRequestsForEmployee,
+} from "@/lib/services";
+import { Asset, ReplacementRequest } from "@/lib/types";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +53,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function EmpleadoPage() {
   const { userData, loading } = useAuth();
@@ -55,7 +72,9 @@ export default function EmpleadoPage() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [replacementDialogOpen, setReplacementDialogOpen] = useState(false);
   const [assetToReplace, setAssetToReplace] = useState<Asset | null>(null);
-  const [replacementReason, setReplacementReason] = useState('');
+  const [replacementReason, setReplacementReason] = useState(''); // Motivo (daño, robo, etc.)
+  const [replacementJustification, setReplacementJustification] = useState(''); // Justificación detallada
+  const [replacementImage, setReplacementImage] = useState<File | null>(null); // Archivo de imagen
 
   useEffect(() => {
     if (!loading && (!userData || !['master', 'empleado'].includes(userData.role))) {
@@ -136,20 +155,34 @@ export default function EmpleadoPage() {
     setAssetToReplace(asset);
     setReplacementDialogOpen(true);
     setReplacementReason('');
+    setReplacementJustification('');
+    setReplacementImage(null);
   };
 
   const handleRequestReplacement = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!assetToReplace || !replacementReason || !userData) {
-      toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo y estar autenticado." });
+    if (!assetToReplace || !replacementReason || !replacementJustification || !replacementImage || !userData) {
+      toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo, justificación y una imagen." });
       return;
     }
     try {
-      await createReplacementRequest(userData.id, assetToReplace.id, replacementReason);
+      // Llamar a la función correcta con todos los datos
+      await submitReplacementRequest({
+        employeeId: userData.id,
+        employeeName: userData.name,
+        assetId: assetToReplace.id,
+        assetName: assetToReplace.name,
+        serial: assetToReplace.serial || 'N/A',
+        reason: replacementReason,
+        justification: replacementJustification,
+        imageFile: replacementImage,
+      });
       toast({ title: "Solicitud Enviada", description: "Su solicitud de reemplazo ha sido enviada para aprobación del master." });
       setReplacementDialogOpen(false);
       setAssetToReplace(null);
       setReplacementReason('');
+      setReplacementJustification('');
+      setReplacementImage(null);
       await fetchAssets();
     } catch (error: any) {
       console.error("Error solicitando reemplazo:", error);
@@ -337,16 +370,27 @@ export default function EmpleadoPage() {
             <DialogHeader>
               <DialogTitle>Solicitar Reemplazo de Activo</DialogTitle>
               <DialogDescription>
-                Por favor, explique por qué necesita un reemplazo para este activo. Sea lo más detallado posible.
+                Complete todos los campos para solicitar el reemplazo de <strong>{assetToReplace?.name}</strong>.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
+              <Select onValueChange={setReplacementReason} value={replacementReason} required>
+                <SelectTrigger><SelectValue placeholder="Seleccione un motivo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daño">Daño</SelectItem>
+                  <SelectItem value="desgaste">Desgaste por uso</SelectItem>
+                  <SelectItem value="perdida">Pérdida</SelectItem>
+                  <SelectItem value="robo">Robo</SelectItem>
+                </SelectContent>
+              </Select>
               <Textarea
-                placeholder="Ej: El portátil no enciende, la batería está fallando..."
-                value={replacementReason}
-                onChange={(e) => setReplacementReason(e.target.value)}
+                placeholder="Justifique detalladamente su solicitud. Ej: El portátil no enciende, la batería está fallando..."
+                value={replacementJustification}
+                onChange={(e) => setReplacementJustification(e.target.value)}
                 required
               />
+              <Label htmlFor="replacement-image">Imagen de Evidencia</Label>
+              <Input id="replacement-image" type="file" accept="image/*" onChange={(e) => setReplacementImage(e.target.files ? e.target.files[0] : null)} required />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setReplacementDialogOpen(false)}>Cancelar</Button>
