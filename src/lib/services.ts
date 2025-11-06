@@ -24,10 +24,10 @@ import {
 
 export * from './types';
 
-// Ayudante para agregar un evento al historial de un activo
+// Helper to add an event to an asset's history array
 const addAssetHistoryEvent = (
-  transaction: any, // Puede ser una Transacción o un WriteBatch
-  assetRef: any, // Pasar la DocumentReference del activo
+  transaction: any, // Can be a Transaction or a WriteBatch
+  assetRef: any, // Pass the DocumentReference of the asset
   event: string,
   description: string,
   actor?: { id: string; name: string }
@@ -39,39 +39,39 @@ const addAssetHistoryEvent = (
     userId: actor?.id || null,
     userName: actor?.name || 'Usuario desconocido',
   };
-  // Usar arrayUnion para agregar el nuevo evento al arreglo de historial
+  // Use arrayUnion to add the new event to the history array
   transaction.update(assetRef, {
     history: arrayUnion(historyEvent)
   });
 };
 
-// ------------------- GESTIÓN DE USUARIOS -------------------
+// ------------------- USER MANAGEMENT -------------------
 
 /**
- * Crea un documento de invitación en la colección 'invitations'.
- * @param email - El correo electrónico del usuario a invitar.
- * @param role - El rol asignado al usuario.
- * @param inviterId - El ID del usuario que realiza la invitación.
- * @throws Si el correo electrónico ya está registrado o ya ha sido invitado.
+ * Creates an invitation document in the 'invitations' collection.
+ * @param email - The email of the user to invite.
+ * @param role - The role assigned to the user.
+ * @param inviterId - The ID of the user making the invitation.
+ * @throws If the email is already registered or already invited.
  */
 export const inviteUser = async (email: string, role: Role, inviterId: string): Promise<void> => {
   const lowerCaseEmail = email.toLowerCase();
 
-  // 1. Verificar si el usuario ya existe en la colección principal de usuarios
+  // 1. Check if user already exists in the main users collection
   const usersQuery = query(collection(db, "users"), where("email", "==", lowerCaseEmail));
   const usersSnapshot = await getDocs(usersQuery);
   if (!usersSnapshot.empty) {
     throw new Error(`El correo '${lowerCaseEmail}' ya está registrado en el sistema.`);
   }
 
-  // 2. Verificar si ya existe una invitación
+  // 2. Check if an invitation already exists
   const invitationRef = doc(db, "invitations", lowerCaseEmail);
   const invitationSnap = await getDoc(invitationRef);
   if (invitationSnap.exists()) {
     throw new Error(`El correo '${lowerCaseEmail}' ya ha sido invitado.`);
   }
 
-  // 3. Crear el documento de invitación con el correo electrónico como ID
+  // 3. Create the invitation document with the email as the ID
   await setDoc(invitationRef, {
     role: role,
     invitedBy: inviterId,
@@ -119,7 +119,7 @@ export const deleteUser = async (userId: string): Promise<void> => {
   await deleteDoc(doc(db, "users", userId));
 };
 
-// ------------------- SERVICIOS DE LOGÍSTICA -------------------
+// ------------------- LOGISTICS SERVICES -------------------
 
 /**
  * Agrega un nuevo activo al inventario o actualiza el stock si ya existe (upsert).
@@ -171,7 +171,7 @@ export const upsertAsset = async (assetData: NewAssetData): Promise<void> => {
         ...assetData,
         status: 'en stock',
         stock: isSerializable ? 1 : assetData.stock,
-        history: [], // Inicializar historial
+        history: [], // Initialize history
       });
       addAssetHistoryEvent(
         transaction,
@@ -379,7 +379,7 @@ export const processAssignmentRequest = async (
     }
     const requestData = requestDoc.data() as Omit<AssignmentRequest, 'id'>;
 
-    // 2. Obtener el documento de usuario del empleado asignado para recuperar su UID
+    // 2. Obtenga el documento de usuario del empleado asignado para recuperar su UID.
     const userRef = doc(db, "users", requestData.employeeId);
     const userDoc = await transaction.get(userRef);
     if (!userDoc.exists() || !userDoc.data()?.uid) {
@@ -387,7 +387,7 @@ export const processAssignmentRequest = async (
     }
     const employeeUid = userDoc.data()?.uid;
 
-    // 3. Obtener el activo de origen del stock
+    // 3. Obtén el activo fuente de stock
     const stockAssetRef = doc(db, "assets", requestData.assetId);
     const stockAssetDoc = await transaction.get(stockAssetRef);
     if (!stockAssetDoc.exists()) {
@@ -399,7 +399,7 @@ export const processAssignmentRequest = async (
     }
     const stockAssetData = stockAssetDoc.data();
 
-    // 4. Validar stock y número de serie
+    // 4. Validate stock and serial number
     const isSerializable = ['equipo_de_computo', 'herramienta_electrica'].includes(stockAssetData.tipo);
     if (isSerializable && !serialNumber) {
       throw new Error("Se requiere un número de serial para este tipo de activo.");
@@ -412,7 +412,7 @@ export const processAssignmentRequest = async (
       throw new Error(`Stock insuficiente. Stock actual: ${currentStock}, Solicitado: ${requestData.quantity}.`);
     }
 
-    // 5. Crear un nuevo documento de activo para el empleado
+    // 5. Crea un nuevo documento de activo para el empleado
     const newAssetForEmployeeRef = doc(collection(db, "assets"));
     transaction.set(newAssetForEmployeeRef, {
       name: stockAssetData.name,
@@ -421,16 +421,16 @@ export const processAssignmentRequest = async (
       serial: serialNumber || null,
       status: 'recibido pendiente',
       employeeId: requestData.employeeId,
-      employeeUid: employeeUid, // Agregar el UID para las reglas de seguridad
+      employeeUid: employeeUid, // Add the UID for security rules
       employeeName: requestData.employeeName,
       assignedDate: Timestamp.now(),
-      stock: requestData.quantity, // La cantidad que se asigna al empleado
-      originalRequestId: requestId, // <-- Enlace a la solicitud original
-      originalReplacementRequestId: requestData.originalReplacementRequestId || null, // <-- Propagar el ID de reemplazo
-      history: [], // Inicializar historial
+      stock: requestData.quantity, // The quantity being assigned to the employee
+      originalRequestId: requestId, // <-- Link to the original request
+      originalReplacementRequestId: requestData.originalReplacementRequestId || null, // <-- Propagate the replacement ID
+      history: [], // Initialize history
     });
 
-    // Agregar evento de historial para el activo recién creado
+    // Add history event for the newly created asset
     addAssetHistoryEvent(
       transaction,
       newAssetForEmployeeRef,
@@ -438,10 +438,10 @@ export const processAssignmentRequest = async (
       `Activo enviado a ${requestData.employeeName}. Transportadora: ${carrier}, Guía: ${trackingNumber}.`
     );
 
-    // 6. Disminuir el stock del activo de origen
+    // 6. Decrement the stock of the source asset
     transaction.update(stockAssetRef, { stock: currentStock - requestData.quantity });
 
-    // 7. Actualizar la solicitud original para marcarla como enviada
+    // 7. Update the original request to mark as sent
     transaction.update(requestRef, {
       status: 'enviado',
       trackingNumber,
@@ -468,19 +468,19 @@ export const retryAssignment = async (
     actor: { id: string; name: string },
     serialNumber?: string
 ): Promise<void> => {
-    // 1. Encontrar el activo en disputa vinculado a esta solicitud
+    // 1. Find the disputed asset linked to this request
     const assetsQuery = query(collection(db, "assets"), where("originalRequestId", "==", requestId), where("status", "==", "en disputa"));
     const assetsSnapshot = await getDocs(assetsQuery);
 
     if (assetsSnapshot.empty) {
-        // Este caso idealmente no debería ocurrir si el flujo es correcto
-        // Sin embargo, aún podemos intentar actualizar la solicitud.
-        // Esto podría suceder si el activo se modificó manualmente.
+        // This case should ideally not happen if the flow is correct
+        // However, we can still try to update the request.
+        // This could happen if the asset was modified manually.
         console.warn(`No se encontró ningún activo en disputa para la solicitud ${requestId}. Se actualizará la solicitud de todos modos.`);
     }
 
     await runTransaction(db, async (transaction) => {
-        // 2. Actualizar la solicitud original
+        // 2. Update the original request
         const requestRef = doc(db, "assignmentRequests", requestId);
         transaction.update(requestRef, {
             status: 'enviado',
@@ -490,12 +490,12 @@ export const retryAssignment = async (
             rejectionReason: ''
         });
 
-        // 3. Actualizar el estado del activo a 'recibido pendiente' si se encuentra
+        // 3. Update the asset's status back to 'recibido pendiente' if found
         if (!assetsSnapshot.empty) {
             const assetToUpdateRef = assetsSnapshot.docs[0].ref;
             transaction.update(assetToUpdateRef, {
                 status: 'recibido pendiente',
-                rejectionReason: '' // Limpiar también el motivo de rechazo en el activo
+                rejectionReason: '' // Clear rejection reason on the asset as well
             });
             addAssetHistoryEvent(
                 transaction,
@@ -684,7 +684,7 @@ export const completeDevolutionProcess = async (processId: string): Promise<void
 };
 
 
-// ------------------- SERVICIOS MAESTROS -------------------
+// ------------------- MASTER SERVICES -------------------
 
 /**
  * Obtiene los activos que están en stock y tienen una cantidad mayor que cero, filtrados por el rol del master.
@@ -710,7 +710,7 @@ export const getStockAssets = async (role: Role): Promise<Asset[]> => {
       q = query(assetsRef, ...baseQueryConstraints);
       break;
     default:
-      // Para cualquier otro rol, devuelve un array vacío ya que no deberían acceder a estos datos de nivel maestro.
+      // For any other role, return an empty array as they should not be accessing this master-level data.
       return [];
   }
 
@@ -768,8 +768,8 @@ export const sendBulkAssignmentRequests = async (
   const batch = writeBatch(db);
   const requestsRef = collection(db, "assignmentRequests");
 
-  // Esta implementación asume que el stock ha sido pre-validado en el cliente.
-  // Todas las solicitudes se establecen en 'pendiente de envío'.
+  // This implementation assumes stock has been pre-validated on the client.
+  // All requests are set to 'pendiente de envío'.
   for (const request of requests) {
     const newRequestRef = doc(requestsRef);
     batch.set(newRequestRef, {
@@ -867,11 +867,11 @@ export const approveReplacementRequest = async (requestId: string, actor: { id: 
       employeeId: requestData.employeeId,
       employeeName: requestData.employeeName,
       masterId: requestData.masterId,
-      quantity: 1, // Los reemplazos son uno a uno
+      quantity: 1, // Replacements are one-to-one
       status: 'pendiente de envío',
       type: 'reemplazo',
       date: Timestamp.now(), // El campo que faltaba
-      originalReplacementRequestId: requestId, // <-- Esto es correcto
+      originalReplacementRequestId: requestId, // <-- This is correct
     });
 
     // 4. Añadir evento de historial al activo original
@@ -899,17 +899,17 @@ export const rejectReplacementRequest = async (requestId: string, reason: string
     }
     const requestData = requestDoc.data() as ReplacementRequest;
 
-    // 1. Actualizar el estado de la solicitud
+    // 1. Update request status
     transaction.update(requestRef, {
       status: 'rechazado',
       rejectionReason: reason,
     });
 
-    // 2. Revertir el estado del activo original a 'activo'
+    // 2. Revert original asset's status back to 'activo'
     const assetRef = doc(db, "assets", requestData.assetId);
     transaction.update(assetRef, { status: 'activo' });
 
-    // 2. Agregar evento de historial al activo
+    // 2. Add history event to the asset
     addAssetHistoryEvent(
       transaction,
       assetRef,
@@ -940,7 +940,7 @@ export const updateReplacementRequestStatus = async (requestId: string, status: 
   }
 };
 
-// ------------------- SERVICIOS PARA EMPLEADOS -------------------
+// ------------------- EMPLOYEE SERVICES -------------------
 
 /**
  * Obtiene todos los activos asignados a un empleado específico.
@@ -1038,7 +1038,7 @@ export const rejectAssetReceipt = async (assetId: string, reason: string, actor:
       rejectionReason: reason 
     });
 
-    // 3. Agregar evento de historial
+    // 3. Add history event
     addAssetHistoryEvent(
       transaction,
       assetRef,
@@ -1057,10 +1057,10 @@ export const rejectAssetReceipt = async (assetId: string, reason: string, actor:
  * @throws Si el empleado o el activo no se encuentran, o si el empleado no tiene un master asociado.
  */
 export const createReplacementRequest = async (employeeId: string, assetId: string, reason: string): Promise<void> => {
-  // Esta función ahora es reemplazada efectivamente por submitReplacementRequest
-  // pero la mantenemos para evitar cambios bruscos si se llama en otro lugar.
-  // La nueva lógica está en submitReplacementRequest.
-  console.warn("createReplacementRequest está obsoleto. Use submitReplacementRequest en su lugar.");
+  // This function is now effectively replaced by submitReplacementRequest
+  // but we keep it to avoid breaking changes if it's called elsewhere.
+  // The new logic is in submitReplacementRequest.
+  console.warn("createReplacementRequest is deprecated. Use submitReplacementRequest instead.");
 };
 
 /**
@@ -1162,7 +1162,7 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
             serial: assetData.serial || 'N/A',
             verified: false
         });
-        // Agregar evento de historial para cada activo
+        // Add history event for each asset
         addAssetHistoryEvent(
             batch,
             assetDoc.ref,
@@ -1186,12 +1186,12 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
 
 
 
-// ------------------- SERVICIOS DE HISTORIAL -------------------
+// ------------------- HISTORY SERVICES -------------------
 
 /**
- * Obtiene el registro de eventos históricos para un activo específico.
- * @param assetId - El ID del activo.
- * @returns Una promesa que se resuelve en un array de eventos de historial, ordenados por fecha.
+ * Gets the historical event log for a specific asset.
+ * @param assetId - The ID of the asset.
+ * @returns A promise that resolves to an array of history events, ordered by date.
  */
 export const getAssetHistory = async (assetId: string): Promise<AssetHistoryEvent[]> => {
   const assetRef = doc(db, "assets", assetId);
@@ -1200,7 +1200,7 @@ export const getAssetHistory = async (assetId: string): Promise<AssetHistoryEven
     return [];
   }
   const history = assetDoc.data().history as AssetHistoryEvent[];
-  // Ordenar por marca de tiempo descendente y formatear fecha
+  // Sort by timestamp descending and format date
   return history
     .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis())
     .map(event => ({
