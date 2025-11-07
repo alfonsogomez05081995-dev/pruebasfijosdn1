@@ -10,37 +10,37 @@ import {
 import { collection, query, where, getDocs, updateDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
-// Create context
+// Crear contexto
 const AuthContext = createContext();
 
-// Custom hook to use the context
+// Hook personalizado para usar el contexto
 export function useAuth() {
   return useContext(AuthContext);
 }
 
-// Context provider
+// Proveedor de contexto
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Login function
+  // Función de inicio de sesión
   function login(email, password) {
     return signInWithEmailAndPassword(auth, email, password);
   }
 
-  // Logout function
+  // Función de cierre de sesión
   function logout() {
     return signOut(auth);
   }
 
-  // Password reset function
+  // Función de reseteo de contraseña
   function resetPassword(email) {
     return sendPasswordResetEmail(auth, email);
   }
 
-  // Fetch user data from Firestore
+  // Obtener datos del usuario desde Firestore
   const fetchUserData = async (user) => {
     if (!user) {
       setUserData(null);
@@ -49,7 +49,7 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      // Query for user document with matching lowercase email
+      // Consulta para el documento de usuario con el correo electrónico en minúsculas
       const q = query(collection(db, "users"), where("email", "==", user.email.toLowerCase()));
       const querySnapshot = await getDocs(q);
 
@@ -58,28 +58,28 @@ export function AuthProvider({ children }) {
         const currentData = userDoc.data();
 
         if (currentData.status === 'invitado') {
-          // This is an invited user logging in. Let's activate them and link their master.
+          // Este es un usuario invitado que inicia sesión. Vamos a activarlo y vincularlo a su master.
           const invitationRef = doc(db, "invitations", user.email.toLowerCase());
           const invitationSnap = await getDoc(invitationRef);
           const masterId = invitationSnap.exists() ? invitationSnap.data().invitedBy : null;
 
           await updateDoc(userDoc.ref, {
             status: 'active',
-            uid: user.uid, // Add the auth UID to the document
-            masterId: masterId, // Link to the inviting master
+            uid: user.uid, // Añadir el UID de autenticación al documento
+            masterId: masterId, // Vincular al master que lo invitó
           });
-          // Re-fetch the (now updated) data to ensure UI has the latest info
+          // Volver a obtener los datos (ahora actualizados) para asegurar que la UI tenga la información más reciente
           const updatedDoc = await getDoc(userDoc.ref);
           const updatedData = updatedDoc.data();
           setUserData({ id: updatedDoc.id, ...updatedData });
           setUserRole(updatedData.role || null);
         } else {
-          // This is a normal active user
+          // Este es un usuario activo normal
           setUserData({ id: userDoc.id, ...currentData });
           setUserRole(currentData.role || null);
         }
       } else {
-        // No document found for this email
+        // No se encontró ningún documento para este correo electrónico
         setUserData(null);
         setUserRole(null);
       }
@@ -97,12 +97,12 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    // Cleanup function
+    // Función de limpieza
     return unsubscribe;
   }, []);
 
 
-  // Value available to all components
+  // Valor disponible para todos los componentes
   const value = {
     currentUser,
     userRole,
