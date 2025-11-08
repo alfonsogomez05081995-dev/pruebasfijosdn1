@@ -1,7 +1,10 @@
 'use client';
 
+// Importa el componente Link de Next.js para la navegación.
 import Link from "next/link";
+// Importa iconos de la biblioteca lucide-react.
 import { ArrowRight, Users, Package, Wrench } from "lucide-react";
+// Importa componentes de UI personalizados.
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,10 +13,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useAuth } from '@/contexts/AuthContext'; // Correct import
+// Importa el hook useAuth para acceder a la información de autenticación.
+import { useAuth } from '@/contexts/AuthContext'; // Importación corregida
+// Importa el hook useRouter de Next.js para la navegación programática.
 import { useRouter } from "next/navigation";
+// Importa el hook useEffect de React para manejar efectos secundarios.
 import { useEffect } from "react";
 
+// Define todos los roles disponibles en la aplicación con su información.
 const allRoles = [
     {
       name: "Master",
@@ -38,28 +45,37 @@ const allRoles = [
     },
 ];
 
+// Define el componente principal del dashboard.
 export default function Dashboard() {
+  // Obtiene el estado de autenticación.
   const auth = useAuth();
+  // Obtiene el objeto router para la navegación.
   const router = useRouter();
 
+  // Efecto para depuración: muestra el ID del proyecto de Firebase.
   useEffect(() => {
     // DEBUG: Log the project ID to verify environment variables are loaded.
     console.log("DEBUG: Project ID from env is:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
   }, []);
 
+  // Efecto que redirige al inicio si el usuario no está autenticado.
   useEffect(() => {
     if (auth && !auth.loading && !auth.currentUser) {
       router.push('/');
     }
   }, [auth, router]);
 
+  // Muestra un mensaje de carga mientras se verifica la autenticación.
   if (!auth || auth.loading || !auth.currentUser) {
     return <div>Cargando...</div>;
   }
 
+  // Obtiene el rol del usuario autenticado.
   const { userRole } = auth;
+  // Filtra los roles disponibles según el rol del usuario.
   const availableRoles = allRoles.filter(role => userRole && role.roles.includes(userRole));
 
+  // Renderiza la interfaz del dashboard.
   return (
     <div className="flex flex-1 flex-col items-center justify-center">
       <div className="text-center mb-12">
@@ -72,6 +88,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-3 md:gap-8 w-full max-w-5xl">
+        {/* Mapea los roles disponibles y renderiza una tarjeta para cada uno. */}
         {availableRoles.map((role) => (
           <Card key={role.name} className="flex flex-col">
             <CardHeader>

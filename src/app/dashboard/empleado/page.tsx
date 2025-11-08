@@ -1,4 +1,5 @@
 'use client';
+// Importaciones de componentes de UI y de la biblioteca de iconos.
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,10 +30,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+// Importaciones de hooks y contexto de autenticación.
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+// Importaciones de funciones de servicio y tipos de datos.
 import {
   getMyAssignedAssets,
   confirmAssetReceipt,
@@ -43,6 +46,7 @@ import {
 } from "@/lib/services";
 import { Asset, ReplacementRequest, AssetHistoryEvent } from "@/lib/types";
 import { formatFirebaseTimestamp } from "@/lib/utils";
+// Importaciones de componentes de diálogo de alerta y selección.
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,10 +66,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// Define el componente de la página del empleado.
 export default function EmpleadoPage() {
+  // Hooks para manejar el estado de la autenticación, el enrutamiento y las notificaciones.
   const { userData, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  // Estados para manejar los activos asignados, las solicitudes pendientes y los diálogos.
   const [assignedAssets, setAssignedAssets] = useState<Asset[]>([]);
   const [pendingRequests, setPendingRequests] = useState<ReplacementRequest[]>([]);
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
@@ -80,12 +87,14 @@ export default function EmpleadoPage() {
   const [historyAsset, setHistoryAsset] = useState<Asset | null>(null);
   const [assetHistory, setAssetHistory] = useState<AssetHistoryEvent[]>([]);
 
+  // Efecto para redirigir al usuario si no tiene el rol adecuado.
   useEffect(() => {
     if (!loading && (!userData || !['master', 'empleado'].includes(userData.role))) {
       router.push('/');
     }
   }, [userData, loading, router]);
 
+  // Función para obtener los activos y solicitudes del empleado.
   const fetchAssets = useCallback(async () => {
     if (userData?.id) {
         try {
@@ -102,12 +111,14 @@ export default function EmpleadoPage() {
     }
   }, [userData, toast]);
 
+  // Efecto para cargar los datos del empleado cuando el componente se monta.
   useEffect(() => {
     if (userData) {
       fetchAssets();
     }
   }, [userData, fetchAssets]);
 
+  // Maneja la confirmación de la recepción de un activo.
   const handleConfirmReceipt = async (id: string) => {
     if (!userData) return;
     try {
@@ -120,12 +131,14 @@ export default function EmpleadoPage() {
     }
   };
 
+  // Abre el diálogo para rechazar un activo.
   const handleOpenRejectionDialog = (asset: Asset) => {
     setAssetToActOn(asset);
     setRejectionDialogOpen(true);
     setRejectionReason('');
   };
 
+  // Maneja el rechazo de la recepción de un activo.
   const handleRejectReceipt = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!assetToActOn || !rejectionReason || !userData) {
@@ -143,6 +156,7 @@ export default function EmpleadoPage() {
     }
   };
 
+  // Inicia el proceso de devolución de todos los activos.
   const handleInitiateDevolution = async () => {
     if (!userData) return;
     try {
@@ -155,6 +169,7 @@ export default function EmpleadoPage() {
     }
   };
 
+  // Abre el diálogo para solicitar el reemplazo de un activo.
   const handleOpenReplacementDialog = (asset: Asset) => {
     setAssetToReplace(asset);
     setReplacementDialogOpen(true);
@@ -163,6 +178,7 @@ export default function EmpleadoPage() {
     setReplacementImage(null);
   };
 
+  // Maneja la solicitud de reemplazo de un activo.
   const handleRequestReplacement = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!assetToReplace || !replacementReason || !replacementJustification || !replacementImage || !userData) {
@@ -170,7 +186,7 @@ export default function EmpleadoPage() {
       return;
     }
     try {
-      // Llamar a la función correcta con todos los datos
+      // Llama a la función de servicio para enviar la solicitud de reemplazo.
       await submitReplacementRequest({
         employeeId: userData.id,
         employeeName: userData.name,
@@ -194,6 +210,7 @@ export default function EmpleadoPage() {
     }
   };
 
+  // Muestra el historial de un activo.
   const handleShowHistory = async (asset: Asset) => {
     setHistoryAsset(asset);
     try {
@@ -211,14 +228,17 @@ export default function EmpleadoPage() {
     }
   };
 
+  // Filtra los activos según su estado.
   const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente');
   const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente');
   const pendingReplacementAssetIds = new Set(pendingRequests.map(req => req.assetId));
 
+  // Muestra un mensaje de carga mientras se obtienen los datos del usuario.
   if (loading || !userData) {
     return <div>Cargando...</div>;
   }
   
+  // Renderiza la interfaz de la página del empleado.
   return (
     <>
       <h1 className="text-lg font-semibold md:text-2xl mb-4">Portal del Empleado</h1>
@@ -359,7 +379,7 @@ export default function EmpleadoPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Rejection Dialog */}
+      {/* Diálogo para rechazar un activo */}
       <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>
         <DialogContent>
           <form onSubmit={handleRejectReceipt}>
@@ -385,7 +405,7 @@ export default function EmpleadoPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Replacement Dialog */}
+      {/* Diálogo para solicitar el reemplazo de un activo */}
       <Dialog open={replacementDialogOpen} onOpenChange={setReplacementDialogOpen}>
         <DialogContent>
           <form onSubmit={handleRequestReplacement}>
@@ -422,7 +442,7 @@ export default function EmpleadoPage() {
         </DialogContent>
       </Dialog>
 
-      {/* History Dialog */}
+      {/* Diálogo para mostrar el historial de un activo */}
       <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
         <DialogContent className="sm:max-w-[625px]">
           <DialogHeader>

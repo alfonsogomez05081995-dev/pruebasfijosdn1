@@ -1,4 +1,5 @@
 'use client';
+// Importaciones de componentes de UI y de la biblioteca de iconos.
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -40,10 +41,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// Importaciones de hooks y contexto de autenticación.
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+// Importaciones de funciones de servicio y tipos de datos.
 import {
   User,
   Role,
@@ -52,102 +56,107 @@ import {
   updateUser,
   deleteUser,
   getReplacementRequestsForMaster,
-  rejectReplacementRequest,  // <--- Cambiamos la importación
+  rejectReplacementRequest,
   sendBulkAssignmentRequests,
   getStockAssets,
   getAssignmentRequestsForMaster,
-  approveReplacementRequest, // <-- Importamos la función correcta
+  approveReplacementRequest,
   Asset,
   ReplacementRequest,
-  ReplacementStatus
-} from "@/lib/services";import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+} from "@/lib/services";
 
+// Define el componente de la página del Master.
 export default function MasterPage() {
+  // Hooks para manejar el estado de la autenticación, el enrutamiento y las notificaciones.
   const { userData, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   
-  // Data state
+  // Estados para almacenar los datos de la página.
   const [replacementRequests, setReplacementRequests] = useState<ReplacementRequest[]>([]);
   const [employees, setEmployees] = useState<User[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
   const [assignmentHistory, setAssignmentHistory] = useState<any[]>([]);
 
-  // Dialog state for Rejection
+  // Estados para los diálogos de rechazo.
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
   const [requestToActOn, setRequestToActOn] = useState<ReplacementRequest | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  
-  // Dialog state for User Management
+  // Estados para los diálogos de gestión de usuarios.
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
   const [deleteUserDialogOpen, setDeleteUserDialogOpen] = useState(false);
   const [currentUserForAction, setCurrentUserForAction] = useState<User | null>(null);
 
-  // New Multi-Assignment form state
+  // Estados para el formulario de asignación múltiple.
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [assignmentRows, setAssignmentRows] = useState([{ id: 1, assetId: '', quantity: 1 }]);
-
-  // User form state
   const [justification, setJustification] = useState('');
   const [assignmentType, setAssignmentType] = useState<'primera_vez' | 'reposicion' | ''>('');
 
-  // User form state
+  // Estados para el formulario de creación de usuarios.
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState<Role | ''| undefined>('');
 
-
+  // Efecto para redirigir al usuario si no tiene el rol de master.
   useEffect(() => {
     if (!loading && (!userData || !userData.role.startsWith('master'))) {
       router.push('/');
     }
   }, [userData, loading, router]);
 
+  // Función para obtener todos los datos necesarios para la página.
   const fetchAllData = useCallback(async () => {
     if (!userData) return;
     try {
       const isOriginalMaster = userData.role === 'master';
 
-          const [requests, fetchedEmployees, fetchedAssets, allSystemUsers, history] = await Promise.all([
-            getReplacementRequestsForMaster(userData.id),
-            getUsers('empleado', isOriginalMaster ? undefined : userData.id),
-            getStockAssets(userData.role),
-            getUsers(undefined, isOriginalMaster ? undefined : userData.id),
-            getAssignmentRequestsForMaster(userData.id),
-          ]);
-      
-          setReplacementRequests(requests);
-          setEmployees(fetchedEmployees);
-          setStockAssets(fetchedAssets);
-          setAllUsers(allSystemUsers);
-          setAssignmentHistory(history);    } catch (error: any) {
-        console.error("Error fetching data:", error);
-        toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudieron cargar los datos.' });
+      const [requests, fetchedEmployees, fetchedAssets, allSystemUsers, history] = await Promise.all([
+        getReplacementRequestsForMaster(userData.id),
+        getUsers('empleado', isOriginalMaster ? undefined : userData.id),
+        getStockAssets(userData.role),
+        getUsers(undefined, isOriginalMaster ? undefined : userData.id),
+        getAssignmentRequestsForMaster(userData.id),
+      ]);
+  
+      setReplacementRequests(requests);
+      setEmployees(fetchedEmployees);
+      setStockAssets(fetchedAssets);
+      setAllUsers(allSystemUsers);
+      setAssignmentHistory(history);
+    } catch (error: any) {
+      console.error("Error fetching data:", error);
+      toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudieron cargar los datos.' });
     }
   }, [userData, toast]);
 
+  // Efecto para cargar los datos cuando el componente se monta y el usuario está autenticado.
   useEffect(() => {
     if (userData) {
       fetchAllData();
     }
   }, [userData, fetchAllData]);
 
-  // --- Multi-Assignment Handlers ---
+  // --- Manejadores de Asignación Múltiple ---
+  // Añade una nueva fila al formulario de asignación.
   const addAssignmentRow = () => {
     setAssignmentRows([...assignmentRows, { id: Date.now(), assetId: '', quantity: 1 }]);
   };
 
+  // Elimina una fila del formulario de asignación.
   const removeAssignmentRow = (id: number) => {
     setAssignmentRows(assignmentRows.filter(row => row.id !== id));
   };
 
+  // Maneja los cambios en una fila del formulario de asignación.
   const handleAssignmentRowChange = (id: number, field: 'assetId' | 'quantity', value: string | number) => {
     setAssignmentRows(assignmentRows.map(row => row.id === id ? { ...row, [field]: value } : row));
   };
 
+  // Maneja el envío del formulario de asignación múltiple.
   const handleBulkAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const employee = employees.find(e => e.id === selectedEmployee);
@@ -186,7 +195,7 @@ export default function MasterPage() {
     try {
       await sendBulkAssignmentRequests(requests);
       toast({ title: "Solicitudes Enviadas", description: `${requests.length} solicitudes de asignación han sido creadas para ${employee.name}.` });
-      // Reset form
+      // Reinicia el formulario.
       setSelectedEmployee('');
       setAssignmentRows([{ id: 1, assetId: '', quantity: 1 }]);
       setJustification('');
@@ -197,15 +206,16 @@ export default function MasterPage() {
       toast({ variant: "destructive", title: "Error al Enviar", description: error.message || 'No se pudieron crear las solicitudes.' });
     }
   };
+  // --- Fin de los Manejadores de Asignación Múltiple ---
 
-  // --- End Multi-Assignment Handlers ---
-
+  // Abre el diálogo para rechazar una solicitud.
   const handleOpenRejectionDialog = (request: ReplacementRequest) => {
     setRequestToActOn(request);
     setRejectionDialogOpen(true);
     setRejectionReason('');
   };
   
+  // Maneja el envío del formulario de rechazo.
   const handleRejectSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!requestToActOn || !rejectionReason || !userData) {
@@ -213,7 +223,7 @@ export default function MasterPage() {
       return;
     }
     try {
-      await rejectReplacementRequest(requestToActOn.id, rejectionReason, { id: userData.id, name: userData.name }); // <-- Llamada directa
+      await rejectReplacementRequest(requestToActOn.id, rejectionReason, { id: userData.id, name: userData.name });
       toast({ title: "Solicitud Rechazada" });
       setRejectionDialogOpen(false);
       await fetchAllData();
@@ -223,6 +233,7 @@ export default function MasterPage() {
     }
   };
   
+  // Maneja la aprobación de una solicitud.
   const handleApproveRequest = async (id: string) => {
     if (!userData) return;
     try {
@@ -234,7 +245,9 @@ export default function MasterPage() {
       toast({ variant: "destructive", title: "Error", description: "No se pudo aprobar la solicitud." });
     }
   };  
-const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
+
+  // Maneja el envío del formulario para invitar a un usuario.
+  const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newUserEmail || !newUserRole) {
       toast({ variant: "destructive", title: "Error", description: "Correo y Rol son requeridos." });
@@ -253,6 +266,7 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     }
   };
 
+  // Maneja el clic en el botón de editar usuario.
   const handleEditUserClick = (userToEdit: User) => {
     setCurrentUserForAction(userToEdit);
     setNewUserName(userToEdit.name);
@@ -261,6 +275,7 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     setEditUserDialogOpen(true);
   }
 
+  // Maneja el envío del formulario para actualizar un usuario.
   const handleUpdateUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!currentUserForAction || !newUserName || !newUserRole) {
@@ -279,11 +294,13 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     }
   }
 
+  // Maneja el clic en el botón de eliminar usuario.
   const handleDeleteUserClick = (userToDelete: User) => {
     setCurrentUserForAction(userToDelete);
     setDeleteUserDialogOpen(true);
   };
   
+  // Confirma la eliminación de un usuario.
   const confirmDeleteUser = async () => {
     if (!currentUserForAction) return;
     try {
@@ -298,10 +315,12 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     }
   };
 
+  // Muestra un mensaje de carga mientras se obtienen los datos del usuario.
   if (loading || !userData) {
     return <div>Cargando...</div>;
   }
 
+  // Renderiza la interfaz de la página del Master.
   return (
     <>
       <h1 className="text-lg font-semibold md:text-2xl mb-4">Panel del Master</h1>
@@ -444,16 +463,17 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
                         </a>
                       </TableCell>
                       <TableCell className="text-right">
-                                            <div className="flex gap-2 justify-end">
-                                              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApproveRequest(request.id!)}>
-                                                <Check className="h-4 w-4 text-green-500" />
-                                                <span className="sr-only">Aprobar</span>
-                                              </Button>
-                                              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleOpenRejectionDialog(request)}>
-                                                <X className="h-4 w-4 text-red-500" />
-                                                <span className="sr-only">Rechazar</span>
-                                              </Button>
-                                            </div>                      </TableCell>
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApproveRequest(request.id!)}>
+                            <Check className="h-4 w-4 text-green-500" />
+                            <span className="sr-only">Aprobar</span>
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleOpenRejectionDialog(request)}>
+                            <X className="h-4 w-4 text-red-500" />
+                            <span className="sr-only">Rechazar</span>
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -616,9 +636,9 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
             </Card>
         </TabsContent>
         
-        </Tabs>
+      </Tabs>
 
-      {/* Edit User Dialog */}
+      {/* Diálogo para Editar Usuario */}
       <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
           <DialogContent>
               <form onSubmit={handleUpdateUserSubmit}>
@@ -661,7 +681,7 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
           </DialogContent>
       </Dialog>
       
-      {/* Delete User Alert Dialog */}
+      {/* Diálogo de Alerta para Eliminar Usuario */}
        <AlertDialog open={deleteUserDialogOpen} onOpenChange={setDeleteUserDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -678,7 +698,7 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
           </AlertDialogContent>
         </AlertDialog>
         
-        {/* Rejection Dialog for Replacement Requests */}
+        {/* Diálogo para Rechazar Solicitudes de Reemplazo */}
         <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>
           <DialogContent>
             <form onSubmit={handleRejectSubmit}>
@@ -706,5 +726,6 @@ const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
           </DialogContent>
         </Dialog>
         
-        </>
-        );}
+    </>
+  );
+}

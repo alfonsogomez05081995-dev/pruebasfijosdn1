@@ -1,20 +1,25 @@
 'use client';
 
+// Importa el componente Link de Next.js para la navegación entre páginas.
 import Link from "next/link";
+// Importa iconos de la biblioteca lucide-react para usarlos en la interfaz.
 import {
   Home,
   Package,
   Users,
   Wrench,
   PanelLeft,
-  Warehouse, // Added for Inventory
+  Warehouse, // Añadido para Inventario
 } from "lucide-react";
+// Importa componentes de UI personalizados.
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { UserNav } from "@/components/user-nav";
 import { Logo } from "@/components/logo";
-import { useAuth } from '../../contexts/AuthContext'; // Correct import
+// Importa el hook useAuth para acceder a la información de autenticación del usuario.
+import { useAuth } from '../../contexts/AuthContext'; // Importación corregida
 
+// Define todos los elementos de navegación disponibles en la aplicación.
 const allNavItems = [
     { href: "/dashboard", label: "Inicio", icon: Home, roles: ['master', 'master_it', 'master_campo', 'master_depot', 'logistica', 'empleado'] },
     { href: "/dashboard/master", label: "Master", icon: Users, roles: ['master', 'master_it', 'master_campo', 'master_depot'] },
@@ -23,17 +28,22 @@ const allNavItems = [
     { href: "/dashboard/empleado", label: "Empleado", icon: Wrench, roles: ['master', 'empleado'] },
 ];
 
+// Define el componente DashboardLayout que envuelve el contenido de las páginas del dashboard.
 export default function DashboardLayout({
-  children,
+  children, // Prop que recibe el contenido a renderizar dentro del layout.
 }: {
   children: React.ReactNode;
 }) {
-  const auth = useAuth(); // Use real hook
+  // Obtiene el estado de autenticación usando el hook useAuth.
+  const auth = useAuth(); 
 
+  // Filtra los elementos de navegación para mostrar solo aquellos permitidos para el rol del usuario actual.
   const navItems = allNavItems.filter(item => auth && auth.userData && auth.userData.role && item.roles.includes(auth.userData.role));
 
+  // Renderiza la estructura del layout.
   return (
     <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">
+      {/* Barra lateral de navegación para pantallas medianas y grandes (md y lg). */}
       <div className="hidden border-r bg-card md:block">
         <div className="flex h-full max-h-screen flex-col gap-2">
           <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
@@ -43,6 +53,7 @@ export default function DashboardLayout({
             </Link>
           </div>
           <div className="flex-1">
+            {/* Menú de navegación principal. */}
             <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
               {navItems.map((item) => (
                 <Link
@@ -58,8 +69,10 @@ export default function DashboardLayout({
           </div>
         </div>
       </div>
+      {/* Contenido principal y cabecera. */}
       <div className="flex flex-col">
         <header className="flex h-14 items-center gap-4 border-b bg-card px-4 lg:h-[60px] lg:px-6">
+          {/* Menú de navegación deslizable para pantallas pequeñas (móviles). */}
           <Sheet>
             <SheetTrigger asChild>
               <Button
@@ -98,10 +111,12 @@ export default function DashboardLayout({
             </SheetContent>
           </Sheet>
           <div className="w-full flex-1">
-            {/* Can add breadcrumbs or search here */}
+            {/* Espacio para futuras adiciones como breadcrumbs o una barra de búsqueda. */}
           </div>
+          {/* Componente que muestra la información del usuario y opciones de sesión. */}
           <UserNav />
         </header>
+        {/* Contenido principal de la página. */}
         <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6 bg-background/80">
           {children}
         </main>

@@ -1,4 +1,5 @@
 'use client';
+// Importaciones de componentes de UI y de la biblioteca de iconos.
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,10 +30,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PackagePlus, Send, CheckCheck, Upload, AlertTriangle, Archive } from "lucide-react";
+// Importaciones de hooks y contexto de autenticación.
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, FormEvent, useCallback, ChangeEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
+// Importaciones de funciones de servicio y tipos de datos.
 import {
     addAsset,
     addAssetsInBatch,
@@ -54,15 +57,18 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as XLSX from 'xlsx';
 
+// Define el componente de la página de logística.
 export default function LogisticaPage() {
+  // Hooks para manejar el estado de la autenticación, el enrutamiento y las notificaciones.
   const { userData, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  // Estados para manejar las solicitudes de asignación, los procesos de devolución y el historial.
   const [assignmentRequests, setAssignmentRequests] = useState<AssignmentRequest[]>([]);
   const [devolutionProcesses, setDevolutionProcesses] = useState<DevolutionProcess[]>([]);
   const [requestHistory, setRequestHistory] = useState<AssignmentRequest[]>([]);
 
-  // Form states
+  // Estados para los formularios de la página.
   const [assetReference, setAssetReference] = useState('');
   const [assetSerial, setAssetSerial] = useState('');
   const [assetName, setAssetName] = useState('');
@@ -71,7 +77,7 @@ export default function LogisticaPage() {
   const [assetType, setAssetType] = useState<AssetType | ''| undefined>('');
   const [bulkFile, setBulkFile] = useState<File | null>(null);
 
-  // Modal states
+  // Estados para los modales (diálogos).
   const [showProcessModal, setShowProcessModal] = useState(false);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<AssignmentRequest | null>(null);
@@ -81,13 +87,14 @@ export default function LogisticaPage() {
   const [archiveReason, setArchiveReason] = useState('');
   const [availableSerials, setAvailableSerials] = useState<string[]>([]);
 
-
+  // Efecto para redirigir al usuario si no tiene el rol adecuado.
   useEffect(() => {
     if (!loading && (!userData || !['master', 'logistica'].includes(userData.role))) {
       router.push('/');
     }
   }, [userData, loading, router]);
 
+  // Función para obtener todos los datos necesarios para la página de logística.
   const fetchAllData = useCallback(async () => {
     try {
         const [assignRequests, devProcesses, allRequests] = await Promise.all([
@@ -104,13 +111,14 @@ export default function LogisticaPage() {
     }
   }, [toast]);
 
+  // Efecto para cargar los datos cuando el componente se monta y el usuario está autenticado.
   useEffect(() => {
     if (userData) {
         fetchAllData();
     }
   }, [userData, fetchAllData]);
 
-  
+  // Maneja la adición de un nuevo activo al inventario.
   const handleAddAsset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!assetName || !assetType || !assetStock || !assetLocation) {
@@ -140,6 +148,7 @@ export default function LogisticaPage() {
     }
   };
 
+  // Abre el modal para procesar una solicitud de asignación.
   const handleOpenProcessModal = async (request: AssignmentRequest) => {
     setSelectedRequest(request);
     setShowProcessModal(true);
@@ -160,12 +169,14 @@ export default function LogisticaPage() {
     }
   };
 
+  // Abre el modal para resolver una solicitud rechazada.
   const handleOpenRejectionModal = (request: AssignmentRequest) => {
     setSelectedRequest(request);
-    setShowRejectionModal(true);
+setShowRejectionModal(true);
     setArchiveReason('');
   };
 
+    // Maneja el envío del formulario para procesar una solicitud.
     const handleProcessSubmit = async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (!selectedRequest || !trackingNumber || !carrier) {
@@ -191,12 +202,15 @@ export default function LogisticaPage() {
           toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo procesar la solicitud." });
       }
     };
+  
+  // Maneja el reintento de envío de una solicitud rechazada.
   const handleRetrySubmit = () => {
     if (!selectedRequest) return;
     setShowRejectionModal(false);
     handleOpenProcessModal(selectedRequest);
   };
 
+  // Maneja el archivado de una solicitud.
   const handleArchiveSubmit = async () => {
     if (!selectedRequest || !archiveReason) {
         toast({ variant: "destructive", title: "Error", description: "Debe proporcionar un motivo para archivar." });
@@ -213,7 +227,7 @@ export default function LogisticaPage() {
     }
   };
 
-
+  // Verifica la devolución de un activo.
   const handleVerifyReturn = async (processId: string, assetId: string) => {
     try {
         await verifyAssetReturn(processId, assetId);
@@ -225,6 +239,7 @@ export default function LogisticaPage() {
     }
   };
 
+  // Completa un proceso de devolución.
   const handleCompleteProcess = async (processId: string) => {
     try {
         await completeDevolutionProcess(processId);
@@ -236,12 +251,14 @@ export default function LogisticaPage() {
     }
   };
 
+  // Maneja la selección de un archivo para carga masiva.
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
       setBulkFile(event.target.files[0]);
     }
   };
 
+  // Maneja la carga masiva de activos desde un archivo.
   const handleBulkUpload = async () => {
     if (!bulkFile) {
       toast({ variant: "destructive", title: "Error", description: "Por favor, seleccione un archivo." });
@@ -362,10 +379,12 @@ export default function LogisticaPage() {
     reader.readAsArrayBuffer(bulkFile);
   };
 
+  // Muestra un mensaje de carga mientras se obtienen los datos del usuario.
   if (loading || !userData) {
     return <div>Cargando...</div>;
   }
   
+  // Renderiza la interfaz de la página de logística.
   return (
     <>
       <h1 className="text-lg font-semibold md:text-2xl mb-4">Panel de Logística</h1>
@@ -587,7 +606,7 @@ export default function LogisticaPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Process & Retry Modal */}
+      {/* Modal para procesar y reintentar envíos */}
       <Dialog open={showProcessModal} onOpenChange={setShowProcessModal}>
         <DialogContent>
           <DialogHeader>
@@ -629,7 +648,7 @@ export default function LogisticaPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Resolve Rejection Modal */}
+      {/* Modal para resolver rechazos */}
       <Dialog open={showRejectionModal} onOpenChange={setShowRejectionModal}>
         <DialogContent>
           <DialogHeader>
