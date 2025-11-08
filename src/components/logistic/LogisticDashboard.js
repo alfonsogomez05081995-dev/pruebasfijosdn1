@@ -1,5 +1,7 @@
+// Importa las dependencias necesarias de React y React-Bootstrap.
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Table, Badge, Modal, Form, Alert } from 'react-bootstrap';
+// Importa funciones de Firebase Firestore para interactuar con la base de datos.
 import {
   collection,
   getDocs,
@@ -10,22 +12,24 @@ import {
   doc,
   writeBatch
 } from 'firebase/firestore';
-import { getAuth } from "firebase/auth";
+// Importa la configuración de la base de datos de Firebase.
 import { db } from '../../lib/firebase';
 
+// Define el componente funcional LogisticDashboard.
 export default function LogisticDashboard() {
-  const [assets, setAssets] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  // Define los estados para almacenar los activos, usuarios, solicitudes, y el estado de la UI.
+  const [assets, setAssets] = useState([]); // Almacena la lista de todos los activos.
+  const [users, setUsers] = useState([]); // Almacena la lista de todos los usuarios.
+  const [requests, setRequests] = useState([]); // Almacena la lista de todas las solicitudes.
+  const [loading, setLoading] = useState(true); // Indica si los datos se están cargando.
+  const [error, setError] = useState(''); // Almacena mensajes de error.
+  const [success, setSuccess] = useState(''); // Almacena mensajes de éxito.
 
-  // State for modals
-  const [showCreateAssetModal, setShowCreateAssetModal] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState(null);
+  // Estados para controlar la visibilidad de los modales.
+  const [showCreateAssetModal, setShowCreateAssetModal] = useState(false); // Controla el modal de creación de activos.
+  const [selectedRequest, setSelectedRequest] = useState(null); // Almacena la solicitud seleccionada (actualmente no se usa pero está para futuras implementaciones).
 
-  // State for new asset form
+  // Estado para el formulario de creación de un nuevo activo.
   const [newAsset, setNewAsset] = useState({
     serial: '',
     description: '',
@@ -34,40 +38,51 @@ export default function LogisticDashboard() {
     location: '',
   });
 
+  // Función para limpiar los mensajes de error y éxito.
   const clearMessages = () => {
     setError('');
     setSuccess('');
   };
 
+  // Función para cargar todos los datos necesarios desde Firestore (activos, usuarios, solicitudes).
+  // Se usa useCallback para memorizar la función y evitar recrearla en cada render, optimizando el rendimiento.
   const loadData = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); // Inicia el estado de carga.
     try {
+      // Obtiene los documentos de la colección 'assets'.
       const assetsSnapshot = await getDocs(collection(db, 'assets'));
       setAssets(assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
+      // Obtiene los documentos de la colección 'users'.
       const usersSnapshot = await getDocs(collection(db, 'users'));
       setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
+      // Obtiene los documentos de la colección 'requests'.
       const requestsSnapshot = await getDocs(collection(db, 'requests'));
       setRequests(requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
     } catch (err) {
+      // Si hay un error, se almacena en el estado de error.
       setError('Error al cargar los datos. ' + err.message);
     }
-    setLoading(false);
+    setLoading(false); // Finaliza el estado de carga.
   }, []);
 
+  // useEffect se ejecuta una vez que el componente se monta para cargar los datos iniciales.
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData]); // El array de dependencias con loadData asegura que se ejecute solo cuando loadData cambia.
 
+  // Maneja la creación de un nuevo activo.
   const handleCreateAsset = async (e) => {
-    e.preventDefault();
-    clearMessages();
+    e.preventDefault(); // Previene el comportamiento por defecto del formulario.
+    clearMessages(); // Limpia mensajes previos.
 
+    // Define qué tipos de activos requieren un número de serie.
     const serializableTypes = ['pc', 'monitor', 'keyboard', 'mouse', 'herramienta_electrica'];
     const isSerializable = serializableTypes.includes(newAsset.type);
 
+    // Validaciones del formulario.
     if (isSerializable && !newAsset.serial) {
       setError('El serial es obligatorio para este tipo de activo.');
       return;
@@ -78,7 +93,7 @@ export default function LogisticDashboard() {
     }
 
     try {
-      // Check for serial uniqueness if serializable
+      // Verifica si el serial ya existe para activos que lo requieren.
       if (isSerializable && newAsset.serial) {
         const q = query(collection(db, "assets"), where("serial", "==", newAsset.serial));
         const querySnapshot = await getDocs(q);
@@ -88,62 +103,70 @@ export default function LogisticDashboard() {
         }
       }
 
+      // Añade el nuevo activo a la colección 'assets' en Firestore.
       await addDoc(collection(db, "assets"), {
         ...newAsset,
-        serial: isSerializable ? newAsset.serial : null, // Store null if not serializable
+        serial: isSerializable ? newAsset.serial : null, // Guarda null si no es serializable.
         createdAt: new Date(),
       });
       setSuccess(`Activo ${newAsset.description} (Serial: ${newAsset.serial || 'N/A'}) creado con éxito.`);
-      setShowCreateAssetModal(false);
-      setNewAsset({ serial: '', description: '', type: 'pc', status: 'disponible', location: '' });
-      loadData(); // Refresh data
+      setShowCreateAssetModal(false); // Cierra el modal.
+      setNewAsset({ serial: '', description: '', type: 'pc', status: 'disponible', location: '' }); // Resetea el formulario.
+      loadData(); // Recarga los datos para mostrar el nuevo activo.
     } catch (err) {
       setError(`Error al crear el activo: ${err.message}`);
     }
   };
 
+  // Marca una solicitud como 'En Proceso'.
   const handleMarkAsSent = async (request) => {
     try {
       const requestRef = doc(db, 'requests', request.id);
       await updateDoc(requestRef, { status: 'En Proceso' });
       setSuccess(`Solicitud ${request.id} marcada como 'En Proceso'.`);
-      loadData();
+      loadData(); // Recarga los datos para actualizar el estado de la solicitud.
     } catch (err) {
       setError(`Error al marcar como enviado: ${err.message}`);
     }
   };
 
+  // Función placeholder para la gestión de stock (funcionalidad futura).
   const handleManageStock = (request) => {
-    // Placeholder for future stock management logic
     alert(`Gestionar stock para solicitud ${request.id}. (Funcionalidad pendiente)`);
   };
 
+  // Obtiene los detalles de un activo por su ID.
   const getAssetDetails = (assetId) => {
     return assets.find(asset => asset.id === assetId);
   };
 
+  // Obtiene los detalles de un usuario por su ID.
   const getUserDetails = (userId) => {
     return users.find(user => user.id === userId);
   };
 
+  // Muestra un mensaje de carga mientras los datos se están obteniendo.
   if (loading) {
     return <Container className="text-center mt-5"><p>Cargando...</p></Container>;
   }
 
+  // Filtra las solicitudes pendientes y completadas.
   const pendingRequests = requests.filter(req => req.status === 'Pendiente de Envío' || req.status === 'Pendiente por Stock' || req.status === 'Rechazado');
   const completedRequests = requests.filter(req => req.status === 'Completada');
 
+  // Renderiza el dashboard de logística.
   return (
     <Container fluid>
       <Row className="my-4">
         <Col>
           <h2>Dashboard - Logística</h2>
+          {/* Muestra alertas de error o éxito */}
           {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
           {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
         </Col>
       </Row>
 
-      {/* Gestión de Solicitudes */}
+      {/* Sección para la Gestión de Solicitudes Pendientes */}
       <Row className="mb-4">
         <Col>
           <Card>
@@ -197,7 +220,7 @@ export default function LogisticDashboard() {
         </Col>
       </Row>
 
-      {/* Inventario de Activos */}
+      {/* Sección para el Inventario de Activos */}
       <Row className="mb-4">
         <Col>
           <Card>
@@ -235,7 +258,7 @@ export default function LogisticDashboard() {
         </Col>
       </Row>
 
-      {/* Historial de Asignaciones */}
+      {/* Sección para el Historial de Asignaciones Completadas */}
       <Row className="mb-4">
         <Col>
           <Card>
@@ -263,6 +286,7 @@ export default function LogisticDashboard() {
                           })}
                         </ul>
                       </td>
+                      {/* Muestra la fecha de creación de la solicitud */}
                       <td>{req.createdAt.toDate().toLocaleDateString()}</td>
                     </tr>
                   ))}
@@ -273,7 +297,7 @@ export default function LogisticDashboard() {
         </Col>
       </Row>
 
-      {/* Create Asset Modal (reused from MasterDashboard logic) */}
+      {/* Modal para crear un nuevo activo */}
       <Modal show={showCreateAssetModal} onHide={() => setShowCreateAssetModal(false)}>
         <Modal.Header closeButton>
           <Modal.Title>Ingresar Nuevo Activo</Modal.Title>
