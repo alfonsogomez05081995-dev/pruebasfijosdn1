@@ -1,5 +1,7 @@
+// Indica que este componente se ejecuta en el lado del cliente.
 "use client";
 
+// Importa las funciones y hooks necesarios de React y Firebase.
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword,
@@ -10,38 +12,40 @@ import {
 import { collection, query, where, getDocs, updateDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
-// Crear contexto
+// Crea el contexto de autenticación.
 const AuthContext = createContext();
 
-// Hook personalizado para usar el contexto
+// Hook personalizado para usar el contexto de autenticación.
 export function useAuth() {
   return useContext(AuthContext);
 }
 
-// Proveedor de contexto
+// Proveedor de contexto de autenticación.
 export function AuthProvider({ children }) {
+  // Estados para el usuario actual, su rol, sus datos y el estado de carga.
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Función de inicio de sesión
+  // Función para iniciar sesión con correo y contraseña.
   function login(email, password) {
     return signInWithEmailAndPassword(auth, email, password);
   }
 
-  // Función de cierre de sesión
+  // Función para cerrar sesión.
   function logout() {
     return signOut(auth);
   }
 
-  // Función de reseteo de contraseña
+  // Función para restablecer la contraseña.
   function resetPassword(email) {
     return sendPasswordResetEmail(auth, email);
   }
 
-  // Obtener datos del usuario desde Firestore
+  // Función para obtener los datos del usuario desde Firestore.
   const fetchUserData = async (user) => {
+    // Si no hay usuario, resetea los estados de datos y rol.
     if (!user) {
       setUserData(null);
       setUserRole(null);
@@ -49,47 +53,51 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      // Consulta para el documento de usuario con el correo electrónico en minúsculas
+      // Crea una consulta para obtener el documento del usuario con el correo electrónico en minúsculas.
       const q = query(collection(db, "users"), where("email", "==", user.email.toLowerCase()));
       const querySnapshot = await getDocs(q);
 
+      // Si se encuentra el documento del usuario.
       if (!querySnapshot.empty) {
         const userDoc = querySnapshot.docs[0];
         const currentData = userDoc.data();
 
+        // Si el usuario tiene estado 'invitado', lo activa y lo vincula a su master.
         if (currentData.status === 'invitado') {
-          // Este es un usuario invitado que inicia sesión. Vamos a activarlo y vincularlo a su master.
           const invitationRef = doc(db, "invitations", user.email.toLowerCase());
           const invitationSnap = await getDoc(invitationRef);
           const masterId = invitationSnap.exists() ? invitationSnap.data().invitedBy : null;
 
+          // Actualiza el documento del usuario con el estado 'activo', el UID y el ID del master.
           await updateDoc(userDoc.ref, {
             status: 'active',
-            uid: user.uid, // Añadir el UID de autenticación al documento
-            masterId: masterId, // Vincular al master que lo invitó
+            uid: user.uid,
+            masterId: masterId,
           });
-          // Volver a obtener los datos (ahora actualizados) para asegurar que la UI tenga la información más reciente
+          // Vuelve a obtener los datos actualizados para asegurar que la UI tenga la información más reciente.
           const updatedDoc = await getDoc(userDoc.ref);
           const updatedData = updatedDoc.data();
           setUserData({ id: updatedDoc.id, ...updatedData });
           setUserRole(updatedData.role || null);
         } else {
-          // Este es un usuario activo normal
+          // Si es un usuario activo normal, solo establece los datos y el rol.
           setUserData({ id: userDoc.id, ...currentData });
           setUserRole(currentData.role || null);
         }
       } else {
-        // No se encontró ningún documento para este correo electrónico
+        // Si no se encuentra ningún documento para este correo electrónico, resetea los estados.
         setUserData(null);
         setUserRole(null);
       }
     } catch (error) {
+      // Maneja los errores al obtener los datos del usuario.
       console.error("Error fetching user data:", error);
       setUserData(null);
       setUserRole(null);
     }
   };
 
+  // Efecto para observar los cambios en el estado de autenticación.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -97,12 +105,12 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    // Función de limpieza
+    // Devuelve la función de limpieza para desuscribirse del observador.
     return unsubscribe;
   }, []);
 
 
-  // Valor disponible para todos los componentes
+  // Valor del contexto que estará disponible para todos los componentes hijos.
   const value = {
     currentUser,
     userRole,
@@ -113,7 +121,9 @@ export function AuthProvider({ children }) {
   };
 
   return (
+    // Proveedor de contexto que envuelve a los componentes hijos.
     <AuthContext.Provider value={value}>
+      {/* Renderiza los componentes hijos solo cuando la carga ha finalizado. */}
       {!loading && children}
     </AuthContext.Provider>
   );
