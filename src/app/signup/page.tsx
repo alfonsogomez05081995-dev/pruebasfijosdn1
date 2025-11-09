@@ -1,52 +1,35 @@
 'use client';
 
-// Importaciones de React y Next.js
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-
-// Importaciones de componentes de UI y hooks personalizados
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-
-// Importaciones de Firebase para autenticación y base de datos
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { getFirestore, doc, getDoc, writeBatch, collection, serverTimestamp } from "firebase/firestore";
-import { app } from '@/lib/firebase'; // Importa la instancia de la app de Firebase
+import { app } from '@/lib/firebase';
 
-/**
- * Componente SignupPage.
- * Permite a un usuario registrarse en el sistema, pero solo si ha sido previamente invitado.
- */
 export default function SignupPage() {
-  // --- Hooks y Estados ---
   const router = useRouter();
   const { toast } = useToast();
-  
-  // Estados para los campos del formulario de registro
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  /**
-   * Maneja el proceso de registro de un nuevo usuario.
-   * @param {FormEvent<HTMLFormElement>} event - El evento del formulario.
-   */
   const handleSignUp = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
 
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const lowerCaseEmail = email.toLowerCase(); // Normaliza el email a minúsculas
+    const lowerCaseEmail = email.toLowerCase();
 
     try {
-      // 1. Verificar si existe una invitación válida en la colección 'invitations'.
-      // El registro está restringido solo a correos invitados.
+      // 1. Check for a valid invitation in the 'invitations' collection
       const invitationRef = doc(db, "invitations", lowerCaseEmail);
       const invitationSnap = await getDoc(invitationRef);
 
@@ -54,46 +37,43 @@ export default function SignupPage() {
         throw new Error("No estás autorizado para registrarte, la invitación no es válida o ya fue usada. Contacta a un administrador.");
       }
       
-      // Extrae el rol y quién invitó desde el documento de invitación.
       const { role, invitedBy } = invitationSnap.data();
 
-      // 2. Crear el usuario en Firebase Authentication.
+      // 2. Create the user in Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Actualiza el perfil de Firebase Auth con el nombre del usuario.
+      // Update Firebase Auth profile display name
       await updateProfile(user, { displayName: name });
 
-      // 3. Usar una escritura por lotes (batch write) para garantizar la atomicidad.
-      // Esto asegura que o se crean los datos del usuario Y se borra la invitación, o no se hace nada.
+      // 3. Use a batch write to create the new user document and delete the invitation atomically
       const batch = writeBatch(db);
 
-      // Crea una referencia para un nuevo documento en la colección 'users'.
+      // Create a new document reference in the 'users' collection
       const newUserRef = doc(collection(db, "users"));
 
-      // Define los datos para el nuevo documento de usuario en Firestore.
+      // Set the data for the new user document
       batch.set(newUserRef, {
         uid: user.uid,
         name: name,
         email: lowerCaseEmail,
-        role: role, // Rol asignado en la invitación.
-        invitedBy: invitedBy, // ID del master que lo invitó.
-        status: "activo", // El usuario se crea como 'activo'.
-        createdAt: serverTimestamp(), // Marca de tiempo del servidor.
+        role: role,
+        invitedBy: invitedBy, // <-- Ensure this is saved
+        status: "activo",
+        createdAt: serverTimestamp(),
       });
 
-      // Elimina el documento de invitación para que no pueda ser reutilizado.
+      // Delete the used invitation document
       batch.delete(invitationRef);
 
-      // Ejecuta todas las operaciones del lote de forma atómica.
+      // Commit the atomic batch write
       await batch.commit();
 
       toast({ title: "¡Registro Exitoso!", description: "Tu cuenta ha sido creada. Ahora puedes iniciar sesión." });
-      router.push('/'); // Redirige al usuario a la página de inicio de sesión.
+      router.push('/'); // Redirect to login page
 
     } catch (error: any) {
       console.error("Error en el registro:", error);
-      // Manejo de errores comunes de Firebase para dar feedback claro al usuario.
       let errorMessage = error.message;
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = "Este correo electrónico ya está en uso por otra cuenta.";
@@ -105,11 +85,10 @@ export default function SignupPage() {
       
       toast({ variant: "destructive", title: "Error en el registro", description: errorMessage });
     } finally {
-      setLoading(false); // Asegura que el estado de carga se desactive siempre.
+      setLoading(false);
     }
   };
 
-  // --- Renderizado del Componente ---
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
       <Card className="mx-auto max-w-sm">

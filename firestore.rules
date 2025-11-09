@@ -1,180 +1,44 @@
 rules_version = '2';
-
-/**
- * Reglas de Seguridad para Cloud Firestore
- *
- * Estas reglas definen quién puede leer, escribir, actualizar y eliminar datos
- * en la base de datos. Son la principal capa de seguridad del backend.
- */
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- Funciones Auxiliares ---
-    // Se definen aquí para ser reutilizadas en las reglas de diferentes colecciones.
-
-    /**
-     * Obtiene el rol del usuario que está realizando la solicitud.
-     * Es una función clave para implementar el Control de Acceso Basado en Roles (RBAC).
-     * @returns El string del rol del usuario (ej. 'master', 'logistica', 'empleado').
-     */
-    function getUserRole() {
-      // Accede al documento del usuario en la colección 'users' usando el UID de la solicitud
-      // y devuelve el valor del campo 'role'.
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-    }
-
-    /**
-     * Verifica si el usuario autenticado es el dueño de un documento.
-     * @param doc - El documento al que se está accediendo.
-     * @returns true si el 'employeeUid' del documento coincide con el UID del usuario.
-     */
-    function isOwner(doc) {
-      return request.auth.uid == doc.data.employeeUid;
-    }
-
-    // --- Reglas por Colección ---
-
     // Reglas para la colección 'users'
     match /users/{userId} {
-      // LECTURA:
-      // - Un usuario puede leer su propio perfil.
-      // - Los roles 'master' y 'logistica' pueden leer cualquier perfil.
-      // - Un 'master_' (master_it, etc.) puede leer los perfiles de los usuarios que invitó.
-      allow read: if request.auth != null && (
-        request.auth.uid == userId ||
-        getUserRole() == 'master' ||
-        getUserRole() == 'logistica' ||
-        (getUserRole().startsWith('master_') && resource.data.invitedBy == request.auth.uid)
-      );
+      // Solo usuarios autenticados pueden leer perfiles.
+      allow read: if request.auth != null;
 
-      // CREACIÓN:
-      // Un usuario puede crear su propio documento de perfil solo si:
-      // 1. Está autenticado.
-      // 2. El UID del documento a crear coincide con su propio UID.
-      // 3. Existe un documento de invitación para su correo electrónico.
+      // Permitir la creación de un usuario si está autenticado (recién registrado),
+      // su UID coincide con el del documento a crear, y existe una invitación para su email.
       allow create: if request.auth != null
                     && request.auth.uid == request.resource.data.uid
                     && exists(/databases/$(database)/documents/invitations/$(request.resource.data.email));
 
-      // ACTUALIZACIÓN:
-      // Un usuario solo puede actualizar su propio documento de perfil.
+      // Un usuario puede actualizar su propio documento.
       allow update: if request.auth.uid == userId;
 
-      // ELIMINACIÓN:
-      // Solo un usuario con rol 'master' puede eliminar perfiles de usuario.
-      allow delete: if request.auth != null && getUserRole() == 'master';
+      // Solo un 'master' puede eliminar usuarios.
+      allow delete: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
     }
 
     // Reglas para la colección 'invitations'
     match /invitations/{email} {
-      // OBTENER (GET):
-      // - Se permite sin autenticación para que el flujo de registro pueda verificar si una invitación existe.
-      // - Un 'master' puede obtener cualquier invitación.
-      allow get: if request.auth == null || (request.auth != null && getUserRole().startsWith('master'));
+      // Permitir 'get' a no autenticados (para registro) Y a usuarios master.
+      allow get: if request.auth == null || (request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master');
 
-      // LISTAR (LIST):
-      // Solo los 'master' pueden listar todas las invitaciones.
-      allow list: if request.auth != null && getUserRole().startsWith('master');
+      // Permitir 'list' (leer la colección) solo a usuarios master.
+      allow list: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
 
-      // CREACIÓN:
-      // Solo los 'master' pueden crear nuevas invitaciones.
-      allow create: if request.auth != null && getUserRole().startsWith('master');
-      
-      // ELIMINACIÓN:
-      // Un usuario puede eliminar su propia invitación (usualmente durante el proceso de registro).
+      // Permitir a un usuario autenticado eliminar su propia invitación durante el registro.
       allow delete: if request.auth != null && request.auth.token.email == email;
+
+      // Permitir a un master crear invitaciones.
+      allow create: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
     }
 
-    // Reglas para la colección 'assets'
-    match /assets/{assetId} {
-      // LECTURA:
-      // - 'master' y 'logistica' pueden leer todos los activos.
-      // - Roles de master específicos ('master_it', etc.) pueden leer activos de su tipo.
-      // - Un 'empleado' solo puede leer los activos que tiene asignados (isOwner).
-      allow read: if request.auth != null && (
-        getUserRole() == 'master' ||
-        getUserRole() == 'logistica' ||
-        (getUserRole() == 'master_it' && resource.data.tipo == 'equipo_de_computo') ||
-        ((getUserRole() == 'master_campo' || getUserRole() == 'master_depot') && (resource.data.tipo == 'herramienta_electrica' || resource.data.tipo == 'herramienta_manual')) ||
-        (getUserRole() == 'empleado' && isOwner(resource))
-      );
-
-      // ESCRITURA (create, update, delete):
-      // - 'master' y 'logistica' pueden crear y actualizar activos.
-      // - Solo 'master' puede eliminar activos.
-      allow create, update: if request.auth != null && (getUserRole() == 'master' || getUserRole() == 'logistica');
-      allow delete: if request.auth != null && getUserRole() == 'master';
-    }
-
-    // Reglas para la colección 'assignmentRequests' (Solicitudes de Asignación)
-    match /assignmentRequests/{requestId} {
-      // LECTURA:
-      // - 'master' y 'logistica' pueden leer todas las solicitudes.
-      // - Un 'empleado' puede leer las solicitudes donde él es el destinatario.
-      allow read: if request.auth != null && (
-        getUserRole() == 'master' ||
-        getUserRole() == 'logistica' ||
-        (getUserRole() == 'empleado' && resource.data.employeeUid == request.auth.uid)
-      );
-
-      // CREACIÓN: Solo los 'master' pueden crear solicitudes de asignación.
-      allow create: if request.auth != null && getUserRole().startsWith('master');
-
-      // ACTUALIZACIÓN: Solo 'logistica' puede actualizar (ej. cambiar estado a 'enviado').
-      allow update: if request.auth != null && getUserRole() == 'logistica';
-
-      // ELIMINACIÓN: Solo 'master' puede eliminar solicitudes.
-      allow delete: if request.auth != null && getUserRole() == 'master';
-    }
-
-    // Reglas para la colección 'replacementRequests' (Solicitudes de Reemplazo)
-    match /replacementRequests/{requestId} {
-      // LECTURA:
-      // - Los 'master' pueden leer todas las solicitudes.
-      // - Un 'empleado' puede leer sus propias solicitudes.
-      allow read: if request.auth != null && (
-        getUserRole().startsWith('master') ||
-        (getUserRole() == 'empleado' && resource.data.employeeId == request.auth.uid)
-      );
-
-      // CREACIÓN: Solo un 'empleado' puede crear una solicitud de reemplazo para sus activos.
-      allow create: if request.auth != null && getUserRole() == 'empleado';
-
-      // ACTUALIZACIÓN: Solo los 'master' pueden actualizar (aprobar/rechazar).
-      allow update: if request.auth != null && getUserRole().startsWith('master');
-
-      // ELIMINACIÓN: Solo los 'master' pueden eliminar.
-      allow delete: if request.auth != null && getUserRole().startsWith('master');
-    }
-
-    // Reglas para la colección 'devolutionProcesses' (Procesos de Devolución)
-    match /devolutionProcesses/{processId} {
-      // LECTURA:
-      // - 'master' y 'logistica' pueden leer todos los procesos.
-      // - Un 'empleado' puede leer sus propios procesos de devolución.
-      allow read: if request.auth != null && (
-        getUserRole() == 'master' ||
-        getUserRole() == 'logistica' ||
-        (getUserRole() == 'empleado' && resource.data.employeeId == request.auth.uid)
-      );
-
-      // CREACIÓN: Solo un 'empleado' puede iniciar un proceso de devolución.
-      allow create: if request.auth != null && getUserRole() == 'empleado';
-
-      // ACTUALIZACIÓN: Solo 'logistica' puede actualizar (verificar activos, completar proceso).
-      allow update: if request.auth != null && getUserRole() == 'logistica';
-
-      // ELIMINACIÓN: Solo 'master' puede eliminar.
-      allow delete: if request.auth != null && getUserRole() == 'master';
-    }
-
-    // Regla por Defecto - MUY IMPORTANTE
+    // Reglas para el resto de las colecciones
     match /{document=**} {
-      // Deniega explícitamente todas las operaciones de lectura y escritura para cualquier
-      // colección que no tenga una regla específica definida arriba.
-      // Esto previene accesos no autorizados a futuras colecciones o a las actuales si
-      // una regla específica falla. Es una práctica de seguridad fundamental (default-deny).
-      allow read, write: if false;
+      // Requerir autenticación para todas las demás operaciones.
+      allow read, write: if request.auth != null;
     }
   }
 }

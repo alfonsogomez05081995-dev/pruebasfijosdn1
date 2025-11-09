@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Table, Badge, Modal, Form, Alert } from 'react-bootstrap';
 // Importaciones de Firebase para interactuar con la base de datos de Firestore.
-import { collection, getDocs, query, where, doc, updateDoc, writeBatch, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, updateDoc, writeBatch } from 'firebase/firestore';
 // Importación de la configuración de la base de datos y el contexto de autenticación.
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -23,41 +23,33 @@ export default function EmployeeDashboard() {
   // Estado para almacenar los comentarios de rechazo.
   const [rejectionComments, setRejectionComments] = useState('');
 
-  // Carga los activos una vez y escucha las solicitudes en tiempo real.
-  useEffect(() => {
-    if (!currentUser) {
-      setLoading(false);
-      return;
-    }
-
+  // Función para cargar los datos (solicitudes y activos) desde Firestore.
+  const loadData = useCallback(async () => {
+    // Si no hay un usuario autenticado, no se hace nada.
+    if (!currentUser) return;
     setLoading(true);
-    // Cargar activos una sola vez.
-    const loadAssets = async () => {
-      try {
-        const assetsSnapshot = await getDocs(collection(db, 'assets'));
-        const assetsData = assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setAssets(assetsData);
-      } catch (err) {
-        setError('Error al cargar los activos. ' + err.message);
-      }
-    };
-
-    loadAssets();
-
-    // Escuchar las solicitudes del empleado en tiempo real.
-    const requestsQuery = query(collection(db, 'requests'), where('employeeId', '==', currentUser.uid));
-    const unsubscribe = onSnapshot(requestsQuery, (snapshot) => {
-      const requestsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    try {
+      // Consulta para obtener las solicitudes del empleado actual.
+      const requestsQuery = query(collection(db, 'requests'), where('employeeId', '==', currentUser.uid));
+      const requestsSnapshot = await getDocs(requestsQuery);
+      const requestsData = requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setRequests(requestsData);
-      setLoading(false);
-    }, (err) => {
-      setError('Error al escuchar las solicitudes en tiempo real: ' + err.message);
-      setLoading(false);
-    });
 
-    // Limpia el listener cuando el componente se desmonta.
-    return () => unsubscribe();
+      // Consulta para obtener todos los activos y poder mostrar sus detalles.
+      const assetsSnapshot = await getDocs(collection(db, 'assets'));
+      const assetsData = assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAssets(assetsData);
+
+    } catch (err) {
+      setError('Error al cargar los datos. ' + err.message);
+    }
+    setLoading(false);
   }, [currentUser]);
+
+  // Hook que se ejecuta al montar el componente para cargar los datos iniciales.
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Función para manejar la gestión de una solicitud, mostrando el modal.
   const handleManageRequest = (request) => {
@@ -69,20 +61,12 @@ export default function EmployeeDashboard() {
   const handleConfirmReceipt = async () => {
     if (!selectedRequest) return;
     try {
-      const batch = writeBatch(db);
+      // Actualiza el estado de la solicitud a 'Completada'.
       const requestRef = doc(db, 'requests', selectedRequest.id);
-      // Actualiza el estado de la solicitud a 'Recibido por el Empleado'.
-      batch.update(requestRef, { status: 'Recibido por el Empleado' });
-
-      // Actualiza el estado de los activos a 'Asignado y Recibido' y asigna al empleado.
-      selectedRequest.assetIds.forEach(assetId => {
-        const assetRef = doc(db, 'assets', assetId);
-        batch.update(assetRef, { status: 'Asignado y Recibido', assignedTo: currentUser.uid });
-      });
-
-      await batch.commit(); // Ejecuta todas las operaciones del batch.
+      await updateDoc(requestRef, { status: 'Completada' });
       setSuccess('Recepción confirmada con éxito.');
       setShowModal(false);
+      loadData(); // Recarga los datos para reflejar los cambios.
     } catch (err) {
       setError('Error al confirmar la recepción: ' + err.message);
     }
@@ -114,6 +98,7 @@ export default function EmployeeDashboard() {
       setSuccess('La asignación ha sido rechazada.');
       setShowModal(false);
       setRejectionComments('');
+      loadData(); // Recarga los datos.
     } catch (err) {
       setError('Error al rechazar la asignación: ' + err.message);
     }

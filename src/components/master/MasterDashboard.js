@@ -1,15 +1,16 @@
-"use client"; // MUY IMPORTANTE: Indica que este es un Componente de Cliente.
-
 // Importaciones necesarias de React, React Bootstrap y Firebase.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Table, Badge, Modal, Form, Alert } from 'react-bootstrap';
 import {
   collection,
+  getDocs,
   addDoc,
+  query,
+  where,
+  updateDoc,
   doc,
   setDoc,
-  writeBatch,
-  onSnapshot
+  writeBatch
 } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { db } from '../../lib/firebase'; // Asegúrate de que la ruta a tu configuración de Firebase sea correcta.
@@ -47,45 +48,33 @@ export default function MasterDashboard() {
     setSuccess('');
   };
 
-  // Carga y escucha los datos en tiempo real.
-  useEffect(() => {
+  // Carga los datos iniciales (activos, usuarios, solicitudes) desde Firestore.
+  // useCallback memoriza la función para evitar recrearla en cada render, optimizando el rendimiento.
+  const loadData = useCallback(async () => {
     setLoading(true);
+    try {
+      // Cargar activos.
+      const assetsSnapshot = await getDocs(collection(db, 'assets'));
+      setAssets(assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsers(usersData);
-    }, (err) => {
-      console.error("Error listening to users:", err);
-      setError('Error al cargar usuarios: ' + err.message);
-    });
+      // Cargar usuarios.
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-    const unsubscribeAssets = onSnapshot(collection(db, 'assets'), (snapshot) => {
-      const assetsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAssets(assetsData);
-    }, (err) => {
-      console.error("Error listening to assets:", err);
-      setError('Error al cargar activos: ' + err.message);
-    });
+      // Cargar solicitudes creadas por el usuario actual.
+      const requestsSnapshot = await getDocs(query(collection(db, 'requests'), where('requesterId', '==', currentUser.uid)));
+      setRequests(requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-    const unsubscribeRequests = onSnapshot(collection(db, 'requests'), (snapshot) => {
-      console.log("MasterDashboard: onSnapshot fired for requests!");
-      const requestsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setRequests(requestsData);
-      setLoading(false); // Datos listos
-    }, (err) => {
-      console.error("MasterDashboard: Error listening to requests:", err);
-      setError('Error al escuchar las solicitudes: ' + err.message);
-      setLoading(false);
-    });
+    } catch (err) {
+      setError('Error al cargar los datos. ' + err.message);
+    }
+    setLoading(false);
+  }, [currentUser.uid]); // La dependencia currentUser.uid asegura que la función se recree si el usuario cambia.
 
-    // Limpia los listeners cuando el componente se desmonta.
-    return () => {
-      unsubscribeUsers();
-      unsubscribeAssets();
-      unsubscribeRequests();
-    };
-  }, []); // El array vacío asegura que esto se ejecute solo una vez.
-
+  // useEffect se ejecuta después del primer render y cada vez que `loadData` cambia.
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Maneja la creación de un nuevo usuario.
   const handleCreateUser = async (e) => {
@@ -119,33 +108,21 @@ export default function MasterDashboard() {
       setSuccess(`Usuario ${newUser.email} creado con éxito.`);
       setShowCreateUserModal(false); // Cierra el modal.
       setNewUser({ email: '', password: '', nombre: '', apellido: '', role: 'employee' }); // Resetea el formulario.
-      // No es necesario llamar a loadData(), onSnapshot se encargará de actualizar la UI.
+      loadData(); // Recarga los datos para mostrar el nuevo usuario.
     } catch (err) {
       console.error("Error durante la creación del usuario:", err);
       setError(`Error al crear usuario: ${err.message}`);
     }
   };
 
-  // Maneja la creación de un nuevo activo.
+  // Maneja la creación de un nuevo activo (lógica pendiente de implementación).
   const handleCreateAsset = async (e) => {
     e.preventDefault();
     clearMessages();
-    if (!newAsset.serial || !newAsset.description || !newAsset.type) {
-        setError('Por favor, completa todos los campos.');
-        return;
-    }
-    try {
-        await addDoc(collection(db, 'assets'), {
-            ...newAsset,
-            createdAt: new Date(),
-        });
-        setSuccess('Activo creado con éxito.');
-        setShowCreateAssetModal(false);
-        setNewAsset({ serial: '', description: '', type: 'pc', status: 'disponible' });
-        // onSnapshot actualizará la lista de activos automáticamente.
-    } catch (err) {
-        setError(`Error al crear el activo: ${err.message}`);
-    }
+    // Aquí iría la lógica para añadir un nuevo activo a la colección 'assets' en Firestore.
+    // Por ejemplo: await addDoc(collection(db, 'assets'), newAsset);
+    console.log("Funcionalidad de crear activo no implementada.", newAsset);
+    // Deberías añadir manejo de éxito y error, y recargar los datos.
   };
 
   // Maneja la selección y deselección de activos en el modal de asignación.
@@ -199,7 +176,7 @@ export default function MasterDashboard() {
       setSuccess(`Solicitud de asignación creada con estado: ${requestStatus}.`);
       setShowAssignAssetModal(false);
       setAssignment({ selectedUser: '', selectedAssets: [] }); // Resetea el formulario de asignación.
-      // No es necesario llamar a loadData(), onSnapshot se encargará de actualizar la UI.
+      loadData(); // Recarga todos los datos.
     } catch (err) {
       setError(`Error al crear la solicitud: ${err.message}`);
     }
@@ -315,7 +292,7 @@ export default function MasterDashboard() {
               <Form.Control type="text" value={newUser.nombre} onChange={(e) => setNewUser({...newUser, nombre: e.target.value})} required />
             </Form.Group>
             <Form.Group className="mb-3">
-              <Form.Label>Apellido</Label>
+              <Form.Label>Apellido</Form.Label>
               <Form.Control type="text" value={newUser.apellido} onChange={(e) => setNewUser({...newUser, apellido: e.target.value})} />
             </Form.Group>
             <Form.Group className="mb-3">

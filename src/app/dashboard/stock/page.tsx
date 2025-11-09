@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getStockAssets, updateAsset, deleteAsset } from '@/lib/services';
 import { Asset } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-// Importación de componentes de la interfaz de usuario (UI) de Shadcn
+// Importación de componentes de la interfaz de usuario (UI)
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -20,68 +20,56 @@ import { Label } from '@/components/ui/label';
 // Importación de la librería para manejar archivos Excel
 import * as XLSX from 'xlsx';
 
-/**
- * Función auxiliar para formatear el tipo de activo para una mejor visualización en la UI.
- * @param {string} type - El tipo de activo desde la base de datos (ej. 'equipo_de_computo').
- * @returns {string} El tipo de activo formateado (ej. 'Equipo De Computo').
- */
+// Función auxiliar para formatear el tipo de activo para su visualización
 const formatAssetType = (type: string) => {
-  if (!type) return 'N/A';
+  if (!type) return 'N/A'; // Verificación defensiva para tipos no definidos
+  // Reemplaza guiones bajos por espacios y capitaliza la primera letra de cada palabra
   return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 };
 
-/**
- * Componente StockPage.
- * Muestra el inventario general de activos y permite realizar operaciones CRUD sobre ellos,
- * basándose en el rol del usuario.
- */
+// Componente principal de la página de Stock
 export default function StockPage() {
-  // --- Hooks y Estados ---
-  const { userData, loading } = useAuth(); // Hook para obtener datos del usuario y estado de carga.
+  // Hook para obtener datos de autenticación y estado de carga
+  const { userData, loading } = useAuth();
+  // Hook para la navegación
   const router = useRouter();
-  const { toast } = useToast(); // Hook para mostrar notificaciones.
-  
-  // Estado para almacenar la lista de activos del inventario.
+  // Hook para mostrar notificaciones (toasts)
+  const { toast } = useToast();
+  // Estado para almacenar el inventario de activos
   const [inventory, setInventory] = useState<Asset[]>([]);
   
-  // Estados para controlar la visibilidad de los modales (diálogos) de edición y eliminación.
+  // Estados para controlar los modales de edición y eliminación
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  
-  // Estado para almacenar el activo que ha sido seleccionado para una operación.
+  // Estado para el activo seleccionado en los modales
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-  // Estado para manejar los datos del formulario en el modal de edición.
+  // Estado para los datos del formulario de edición
   const [editFormData, setEditFormData] = useState<Partial<Asset>>({});
 
-  /**
-   * Obtiene el inventario desde el backend.
-   * Se usa `useCallback` para memorizar la función y evitar recrearla en cada render,
-   * optimizando el rendimiento.
-   */
+  // Función para obtener el inventario desde el backend, usando useCallback para memorizarla
   const fetchInventory = useCallback(async () => {
-    if (!userData) return; // No hace nada si los datos del usuario aún no están disponibles.
+    if (!userData) return; // No hacer nada si no hay datos del usuario
     try {
-      // Llama al servicio `getStockAssets`, que ya filtra los activos según el rol del usuario.
+      // Llama al servicio para obtener los activos según el rol del usuario
       const assets = await getStockAssets(userData.role);
-      setInventory(assets);
+      setInventory(assets); // Actualiza el estado del inventario
     } catch (error) {
-      console.error("Error al obtener el inventario:", error);
+      console.error("Error fetching inventory:", error);
+      // Muestra una notificación de error si falla la carga
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar el inventario.' });
     }
-  }, [userData, toast]); // Dependencias: se recrea si `userData` o `toast` cambian.
+  }, [userData, toast]); // Dependencias de la función
 
-  // Efecto para cargar el inventario inicial cuando el componente se monta y los datos del usuario están listos.
+  // useEffect para cargar el inventario cuando los datos del usuario están disponibles
   useEffect(() => {
     if (userData) {
       fetchInventory();
     }
-  }, [userData, fetchInventory]);
+  }, [userData, fetchInventory]); // Se ejecuta cuando userData o fetchInventory cambian
 
-  /**
-   * Manejador para la descarga del inventario en formato Excel.
-   */
+  // Manejador para descargar el inventario en formato Excel
   const handleDownloadExcel = () => {
-    // Mapea los datos del inventario a un formato más legible para el archivo Excel.
+    // Mapea los datos del inventario al formato deseado para la exportación
     const dataToExport = inventory.map(asset => ({
       'Referencia': asset.reference || 'N/A',
       'Descripción': asset.name,
@@ -93,19 +81,17 @@ export default function StockPage() {
       'Asignado a': asset.employeeName || 'N/A',
     }));
 
-    // Usa la librería XLSX para crear y descargar el archivo.
+    // Crea una hoja de cálculo y un libro de trabajo con los datos
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventario');
+    // Descarga el archivo Excel
     XLSX.writeFile(workbook, 'InventarioGeneral.xlsx');
   };
 
-  // --- Manejadores de Operaciones CRUD ---
+  // --- Manejadores de CRUD (Crear, Leer, Actualizar, Eliminar) ---
 
-  /**
-   * Abre el modal de edición y carga los datos del activo seleccionado en el formulario.
-   * @param {Asset} asset - El activo a editar.
-   */
+  // Abre el modal de edición y carga los datos del activo seleccionado
   const handleOpenEditModal = (asset: Asset) => {
     setSelectedAsset(asset);
     setEditFormData({
@@ -120,79 +106,68 @@ export default function StockPage() {
     setIsEditModalOpen(true);
   };
 
-  /**
-   * Maneja el envío del formulario de actualización de un activo.
-   * @param {FormEvent} e - El evento del formulario.
-   */
+  // Maneja la actualización de un activo
   const handleUpdateAsset = async (e: FormEvent) => {
-    e.preventDefault();
+    e.preventDefault(); // Previene el comportamiento por defecto del formulario
     if (!selectedAsset) return;
 
     try {
       const updatedData = { ...editFormData };
-      // Asegura que el stock sea un número antes de enviarlo.
+      // Asegura que el stock sea un número
       if (typeof updatedData.stock === 'string') {
         updatedData.stock = parseInt(updatedData.stock, 10) || 0;
       }
 
+      // Llama al servicio para actualizar el activo en la base de datos
       await updateAsset(selectedAsset.id, updatedData);
       toast({ title: 'Éxito', description: 'Activo actualizado correctamente.' });
-      setIsEditModalOpen(false);
-      fetchInventory(); // Refresca la lista de inventario para mostrar los cambios.
+      setIsEditModalOpen(false); // Cierra el modal
+      fetchInventory(); // Refresca la lista de inventario
     } catch (error: any) {
-      console.error("Error al actualizar el activo:", error);
+      console.error("Error updating asset:", error);
       toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudo actualizar el activo.' });
     }
   };
 
-  /**
-   * Abre el modal de confirmación para eliminar un activo.
-   * @param {Asset} asset - El activo a eliminar.
-   */
+  // Abre el modal de confirmación para eliminar un activo
   const handleOpenDeleteModal = (asset: Asset) => {
     setSelectedAsset(asset);
     setIsDeleteModalOpen(true);
   };
 
-  /**
-   * Maneja la eliminación de un activo tras la confirmación.
-   */
+  // Maneja la eliminación de un activo
   const handleDeleteAsset = async () => {
     if (!selectedAsset) return;
 
     try {
+      // Llama al servicio para eliminar el activo
       await deleteAsset(selectedAsset.id);
       toast({ title: 'Éxito', description: 'Activo eliminado correctamente.' });
-      setIsDeleteModalOpen(false);
-      fetchInventory(); // Refresca la lista.
+      setIsDeleteModalOpen(false); // Cierra el modal
+      fetchInventory(); // Refresca la lista de inventario
     } catch (error: any) {
-      console.error("Error al eliminar el activo:", error);
+      console.error("Error deleting asset:", error);
       toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudo eliminar el activo.' });
     }
   };
   
-  /**
-   * Maneja los cambios en los campos del formulario de edición.
-   * @param {React.ChangeEvent<HTMLInputElement>} e - El evento de cambio del input.
-   */
+  // Maneja los cambios en los campos del formulario de edición
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
     setEditFormData(prev => ({ ...prev, [id]: value }));
   };
 
-  // --- Renderizado Condicional ---
-
-  // Muestra un mensaje de carga mientras se obtienen los datos del usuario.
+  // Muestra un mensaje de carga mientras se obtienen los datos del usuario
   if (loading || !userData) {
     return <div>Cargando...</div>;
   }
 
-  // Control de acceso basado en rol: solo los roles 'master' y 'logistica' pueden ver esta página.
+  // Muestra un mensaje de acceso no autorizado si el rol no es 'master' o 'logistica'
   if (!userData.role.startsWith('master') && userData.role !== 'logistica') {
     return <div>Acceso no autorizado.</div>;
   }
 
-  // --- Renderizado del Componente ---
+  // Renderizado del componente
   return (
     <>
       <Card>
@@ -218,12 +193,13 @@ export default function StockPage() {
                 <TableHead>Stock</TableHead>
                 <TableHead>Ubicación</TableHead>
                 <TableHead>Asignado a</TableHead>
-                {/* Renderizado condicional de la columna de acciones solo para el rol 'master'. */}
+                {/* Muestra la columna de acciones solo si el usuario es 'master' */}
                 {userData.role === 'master' && <TableHead className="text-right">Acciones</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {inventory.length > 0 ? (
+                // Mapea y renderiza cada activo en una fila de la tabla
                 inventory.map(asset => (
                   <TableRow key={asset.id}>
                     <TableCell>{asset.reference || 'N/A'}</TableCell>
@@ -234,7 +210,7 @@ export default function StockPage() {
                     <TableCell>{asset.stock || 0}</TableCell>
                     <TableCell>{asset.location || 'N/A'}</TableCell>
                     <TableCell>{asset.employeeName || 'N/A'}</TableCell>
-                    {/* Renderizado condicional de los botones de acción. */}
+                    {/* Muestra los botones de acción solo para el rol 'master' */}
                     {userData.role === 'master' && (
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEditModal(asset)}>
@@ -248,6 +224,7 @@ export default function StockPage() {
                   </TableRow>
                 ))
               ) : (
+                // Muestra un mensaje si no hay activos en el inventario
                 <TableRow>
                   <TableCell colSpan={userData.role === 'master' ? 9 : 8} className="text-center">No hay activos en el inventario.</TableCell>
                 </TableRow>
@@ -265,7 +242,6 @@ export default function StockPage() {
             <DialogDescription>Modifique los detalles del activo. Haga clic en guardar para aplicar los cambios.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUpdateAsset} className="grid gap-4 py-4">
-            {/* Campos del formulario de edición */}
             <div className="grid gap-2">
               <Label htmlFor="reference">Referencia</Label>
               <Input id="reference" value={editFormData.reference || ''} onChange={handleFormChange} />
@@ -286,7 +262,7 @@ export default function StockPage() {
               <Label htmlFor="stock">Stock</Label>
               <Input id="stock" type="number" value={editFormData.stock || 0} onChange={handleFormChange} />
             </div>
-            {/* TODO: Añadir campos de selección para 'tipo' y 'status' para una mejor UX. */}
+            {/* TODO: Añadir campos de selección para 'tipo' y 'status' si deben ser editables */}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancelar</Button>
               <Button type="submit">Guardar Cambios</Button>

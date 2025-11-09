@@ -1,12 +1,10 @@
 'use client';
 
-// Importaciones de React y Next.js
+// Importa el componente Link de Next.js para la navegación.
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-
-// Importaciones de iconos y componentes de UI
+// Importa iconos de la biblioteca lucide-react.
 import { ArrowRight, Users, Package, Wrench } from "lucide-react";
+// Importa componentes de UI personalizados.
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,15 +13,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+// Importa el hook useAuth para acceder a la información de autenticación.
+import { useAuth } from '@/contexts/AuthContext'; // Importación corregida
+// Importa el hook useRouter de Next.js para la navegación programática.
+import { useRouter } from "next/navigation";
+// Importa el hook useEffect de React para manejar efectos secundarios.
+import { useEffect } from "react";
 
-// Importación del hook de autenticación
-import { useAuth } from '@/contexts/AuthContext';
-
-/**
- * Define los módulos o "roles" principales de la aplicación que se mostrarán en el dashboard.
- * Cada objeto contiene el nombre, descripción, icono, ruta y los roles de usuario que pueden verlo.
- * Esto centraliza la configuración de los paneles principales.
- */
+// Define todos los roles disponibles en la aplicación con su información.
 const allRoles = [
     {
       name: "Master",
@@ -48,55 +45,39 @@ const allRoles = [
     },
 ];
 
-/**
- * Componente Dashboard.
- * Es la página de inicio para los usuarios autenticados. Muestra una bienvenida
- * y tarjetas de acceso a los diferentes módulos según el rol del usuario.
- */
+// Define el componente principal del dashboard.
 export default function Dashboard() {
-  // --- Hooks ---
+  // Obtiene el estado de autenticación.
   const auth = useAuth();
+  // Obtiene el objeto router para la navegación.
   const router = useRouter();
 
-  /**
-   * Efecto para depuración.
-   * Muestra en consola el ID del proyecto de Firebase para verificar que las variables de entorno
-   * se están cargando correctamente en el lado del cliente.
-   * Debería eliminarse o desactivarse en producción.
-   */
+  // Efecto para depuración: muestra el ID del proyecto de Firebase.
   useEffect(() => {
+    // DEBUG: Log the project ID to verify environment variables are loaded.
     console.log("DEBUG: Project ID from env is:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
   }, []);
 
-  /**
-   * Efecto para proteger la ruta.
-   * Si el estado de autenticación ha cargado y no hay un usuario,
-   * redirige a la página de inicio de sesión.
-   */
+  // Efecto que redirige al inicio si el usuario no está autenticado.
   useEffect(() => {
     if (auth && !auth.loading && !auth.currentUser) {
       router.push('/');
     }
   }, [auth, router]);
 
-  // Muestra un mensaje de "Cargando..." mientras el contexto de autenticación determina el estado del usuario.
+  // Muestra un mensaje de carga mientras se verifica la autenticación.
   if (!auth || auth.loading || !auth.currentUser) {
     return <div>Cargando...</div>;
   }
 
-  // Obtiene el rol del usuario desde el contexto de autenticación.
+  // Obtiene el rol del usuario autenticado.
   const { userRole } = auth;
-  
-  /**
-   * Filtra los módulos (`allRoles`) para obtener solo aquellos que el usuario actual
-   * tiene permiso para ver, basándose en su `userRole`.
-   */
+  // Filtra los roles disponibles según el rol del usuario.
   const availableRoles = allRoles.filter(role => userRole && role.roles.includes(userRole));
 
-  // --- Renderizado del Componente ---
+  // Renderiza la interfaz del dashboard.
   return (
     <div className="flex flex-1 flex-col items-center justify-center">
-      {/* Sección de bienvenida */}
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
           Bienvenido a FijosDN
@@ -106,9 +87,8 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Grid que contiene las tarjetas de los módulos disponibles */}
       <div className="grid gap-6 md:grid-cols-3 md:gap-8 w-full max-w-5xl">
-        {/* Mapea los módulos filtrados y renderiza una tarjeta para cada uno. */}
+        {/* Mapea los roles disponibles y renderiza una tarjeta para cada uno. */}
         {availableRoles.map((role) => (
           <Card key={role.name} className="flex flex-col">
             <CardHeader>
@@ -118,9 +98,8 @@ export default function Dashboard() {
               </div>
               <CardDescription>{role.description}</CardDescription>
             </CardHeader>
-            <CardContent className="flex-grow">{/* Espacio para crecer si es necesario */}</CardContent>
+            <CardContent className="flex-grow"></CardContent>
             <div className="p-6 pt-0 mt-auto">
-                {/* Botón que lleva al panel correspondiente. */}
                 <Button asChild className="w-full">
                   <Link href={role.href}>
                     Ir al panel <ArrowRight className="ml-2 h-4 w-4" />
