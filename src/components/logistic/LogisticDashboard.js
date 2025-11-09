@@ -10,7 +10,8 @@ import {
   where,
   updateDoc,
   doc,
-  writeBatch
+  writeBatch,
+  onSnapshot
 } from 'firebase/firestore';
 // Importa la configuración de la base de datos de Firebase.
 import { db } from '../../lib/firebase';
@@ -44,34 +45,47 @@ export default function LogisticDashboard() {
     setSuccess('');
   };
 
-  // Función para cargar todos los datos necesarios desde Firestore (activos, usuarios, solicitudes).
-  // Se usa useCallback para memorizar la función y evitar recrearla en cada render, optimizando el rendimiento.
-  const loadData = useCallback(async () => {
-    setLoading(true); // Inicia el estado de carga.
-    try {
-      // Obtiene los documentos de la colección 'assets'.
-      const assetsSnapshot = await getDocs(collection(db, 'assets'));
-      setAssets(assetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-      // Obtiene los documentos de la colección 'users'.
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-      // Obtiene los documentos de la colección 'requests'.
-      const requestsSnapshot = await getDocs(collection(db, 'requests'));
-      setRequests(requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-    } catch (err) {
-      // Si hay un error, se almacena en el estado de error.
-      setError('Error al cargar los datos. ' + err.message);
-    }
-    setLoading(false); // Finaliza el estado de carga.
-  }, []);
-
-  // useEffect se ejecuta una vez que el componente se monta para cargar los datos iniciales.
+  // useEffect para configurar listeners de Firestore en tiempo real para activos, usuarios y solicitudes.
+  // Esto asegura que el dashboard siempre muestre los datos más actualizados.
   useEffect(() => {
-    loadData();
-  }, [loadData]); // El array de dependencias con loadData asegura que se ejecute solo cuando loadData cambia.
+    setLoading(true);
+
+    // Listener para la colección 'assets'.
+    const unsubscribeAssets = onSnapshot(collection(db, 'assets'), (snapshot) => {
+      setAssets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      console.error("Error listening to assets:", err);
+      setError('Error al cargar activos en tiempo real: ' + err.message);
+    });
+
+    // Listener para la colección 'users'.
+    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      console.error("Error listening to users:", err);
+      setError('Error al cargar usuarios en tiempo real: ' + err.message);
+    });
+
+    // Listener para la colección 'requests'.
+    const unsubscribeRequests = onSnapshot(collection(db, 'requests'), (snapshot) => {
+      console.log("LogisticDashboard: onSnapshot fired for requests!");
+      const requestsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log("LogisticDashboard: requestsData from snapshot:", requestsData);
+      setRequests(requestsData);
+      setLoading(false); // Se considera que los datos principales están listos.
+    }, (err) => {
+      console.error("LogisticDashboard: Error listening to requests in real-time:", err);
+      setError('Error al escuchar las solicitudes en tiempo real: ' + err.message);
+      setLoading(false);
+    });
+
+    // Función de limpieza para desmontar los listeners cuando el componente se desmonte.
+    return () => {
+      unsubscribeAssets();
+      unsubscribeUsers();
+      unsubscribeRequests();
+    };
+  }, []); // El array vacío asegura que el efecto se ejecute solo una vez (al montar).
 
   // Maneja la creación de un nuevo activo.
   const handleCreateAsset = async (e) => {
@@ -118,13 +132,12 @@ export default function LogisticDashboard() {
     }
   };
 
-  // Marca una solicitud como 'En Proceso'.
+  // Marca una solicitud como 'Enviado'.
   const handleMarkAsSent = async (request) => {
     try {
       const requestRef = doc(db, 'requests', request.id);
-      await updateDoc(requestRef, { status: 'En Proceso' });
-      setSuccess(`Solicitud ${request.id} marcada como 'En Proceso'.`);
-      loadData(); // Recarga los datos para actualizar el estado de la solicitud.
+      await updateDoc(requestRef, { status: 'Enviado' });
+      setSuccess(`Solicitud ${request.id} marcada como 'Enviado'.`);
     } catch (err) {
       setError(`Error al marcar como enviado: ${err.message}`);
     }
@@ -150,9 +163,13 @@ export default function LogisticDashboard() {
     return <Container className="text-center mt-5"><p>Cargando...</p></Container>;
   }
 
-  // Filtra las solicitudes pendientes y completadas.
-  const pendingRequests = requests.filter(req => req.status === 'Pendiente de Envío' || req.status === 'Pendiente por Stock' || req.status === 'Rechazado');
-  const completedRequests = requests.filter(req => req.status === 'Completada');
+  // Filtra las solicitudes en dos categorías: pendientes de acción y el historial.
+  const pendingRequests = requests.filter(
+    req => req.status === 'Pendiente de Envío' || req.status === 'Pendiente por Stock'
+  );
+  const completedRequests = requests.filter(
+    req => req.status !== 'Pendiente de Envío' && req.status !== 'Pendiente por Stock'
+  );
 
   // Renderiza el dashboard de logística.
   return (
@@ -271,6 +288,7 @@ export default function LogisticDashboard() {
                     <th>Empleado</th>
                     <th>Activos</th>
                     <th>Fecha Completada</th>
+                    <th>Estado</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -288,6 +306,11 @@ export default function LogisticDashboard() {
                       </td>
                       {/* Muestra la fecha de creación de la solicitud */}
                       <td>{req.createdAt.toDate().toLocaleDateString()}</td>
+                      <td>
+                        <Badge bg={req.status === 'Completada' ? 'success' : 'primary'}>
+                          {req.status}
+                        </Badge>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
