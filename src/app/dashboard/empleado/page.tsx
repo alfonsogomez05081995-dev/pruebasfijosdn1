@@ -231,7 +231,9 @@ export default function EmpleadoPage() {
 
   // Filtra los activos según su estado.
   const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente');
-  const myAssets = assignedAssets.filter(asset => asset.status !== 'recibido pendiente');
+  const myAssets = assignedAssets.filter(asset => 
+    ['activo', 'en devolución', 'reemplazo_solicitado', 'en disputa', 'reemplazado'].includes(asset.status)
+  );
   const pendingReplacementAssetIds = new Set(pendingRequests.map(req => req.assetId));
 
   // Muestra un mensaje de carga mientras se obtienen los datos del usuario.

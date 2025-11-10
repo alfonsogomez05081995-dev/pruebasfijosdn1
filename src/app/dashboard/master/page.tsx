@@ -65,7 +65,11 @@ import {
   Asset,
   ReplacementRequest,
   DevolutionProcess,
+  AssetHistoryEvent,
+  getAssetById,
+  getAssetByRequestId,
 } from "@/lib/services";
+import { formatFirebaseTimestamp } from "@/lib/utils";
 
 import { ImagePreviewModal } from "@/components/ui/ImagePreviewModal";
 import Image from 'next/image';
@@ -85,6 +89,11 @@ export default function MasterPage() {
   const [assignmentHistory, setAssignmentHistory] = useState<any[]>([]);
   const [devolutionProcesses, setDevolutionProcesses] = useState<DevolutionProcess[]>([]);
   const [imageToPreview, setImageToPreview] = useState<string | null>(null);
+
+  // Estados para el modal de historial
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [historyAsset, setHistoryAsset] = useState<Asset | null>(null);
+  const [assetHistory, setAssetHistory] = useState<AssetHistoryEvent[]>([]);
 
   // Estados para los diálogos de rechazo.
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
@@ -148,6 +157,44 @@ export default function MasterPage() {
       fetchAllData();
     }
   }, [userData, fetchAllData]);
+
+  // Muestra el historial de un activo por su ID.
+  const handleShowHistory = async (assetId: string) => {
+    try {
+      const asset = await getAssetById(assetId);
+      if (!asset) {
+        toast({ variant: "destructive", title: "Error", description: "No se pudo encontrar el activo." });
+        return;
+      }
+      setHistoryAsset(asset);
+      const sortedHistory = (asset.history || [])
+        .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis())
+        .map(event => ({
+          ...event,
+          formattedDate: formatFirebaseTimestamp(event.timestamp),
+        }));
+      setAssetHistory(sortedHistory);
+      setHistoryDialogOpen(true);
+    } catch (error) {
+      console.error("Error fetching asset history:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo cargar el historial del activo." });
+    }
+  };
+
+  // Muestra el historial de un activo basado en el ID de la solicitud.
+  const handleShowHistoryForRequest = async (requestId: string) => {
+    try {
+      const asset = await getAssetByRequestId(requestId);
+      if (!asset) {
+        toast({ variant: "destructive", title: "Error", description: "No se encontró un activo asociado a esta solicitud." });
+        return;
+      }
+      handleShowHistory(asset.id);
+    } catch (error) {
+      console.error("Error fetching asset by request ID:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo cargar el historial para esta solicitud." });
+    }
+  };
 
   // --- Manejadores de Asignación Múltiple ---
   // Añade una nueva fila al formulario de asignación.
@@ -527,7 +574,13 @@ export default function MasterPage() {
                         <Badge variant={process.status === 'completado' ? 'default' : 'secondary'}>{process.status}</Badge>
                       </TableCell>
                       <TableCell>
-                        {process.assets.map(a => a.name).join(', ')}
+                        <div className="flex flex-col gap-1">
+                          {process.assets.map(a => (
+                            <Button key={a.id} variant="link" className="h-auto p-0 justify-start" onClick={() => handleShowHistory(a.id)}>
+                              {a.name} ({a.serial})
+                            </Button>
+                          ))}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )) : (
@@ -661,7 +714,12 @@ export default function MasterPage() {
                     <TableRow key={req.id}>
                       <TableCell>{req.date ? new Date(req.date.seconds * 1000).toLocaleDateString() : 'N/A'}</TableCell>
                       <TableCell>{req.employeeName}</TableCell>
-                      <TableCell>{req.assetName}</TableCell>
+                      <TableCell>
+                        <Button variant="link" className="h-auto p-0" onClick={() => handleShowHistoryForRequest(req.id)}>
+                          {req.assetName}
+                          <ExternalLink className="h-3 w-3 ml-1" />
+                        </Button>
+                      </TableCell>
                       <TableCell className="hidden md:table-cell">{req.quantity}</TableCell>
                       <TableCell className="hidden lg:table-cell">{req.assignmentType === 'primera_vez' ? 'Primera Vez' : req.assignmentType === 'reposicion' ? 'Reposición' : 'N/A'}</TableCell>
                       <TableCell className="max-w-[150px] truncate" title={req.justification || 'No registrada'}>{req.justification || 'N/A'}</TableCell>
@@ -790,6 +848,41 @@ export default function MasterPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+      {/* Diálogo para mostrar el historial de un activo */}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-[625px]">
+          <DialogHeader>
+            <DialogTitle>Historial del Activo: {historyAsset?.name}</DialogTitle>
+            <DialogDescription>
+              A continuación se muestra el historial de movimientos para el activo seleccionado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Evento</TableHead>
+                  <TableHead>Descripción</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assetHistory.map((event, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{event.formattedDate}</TableCell>
+                    <TableCell>{event.event}</TableCell>
+                    <TableCell>{event.description}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setHistoryDialogOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
         
     </>
   );

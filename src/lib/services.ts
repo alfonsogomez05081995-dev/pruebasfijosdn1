@@ -369,89 +369,113 @@ export const getAllAssignmentRequests = async (
  * @throws Si la solicitud, el usuario o el activo no se encuentran, o si no hay stock suficiente.
  */
 export const processAssignmentRequest = async (
-  requestId: string, 
-  trackingNumber: string, 
-  carrier: string, 
+  requestId: string,
+  trackingNumber: string,
+  carrier: string,
   actor: { id: string; name: string },
   serialNumber?: string
 ): Promise<void> => {
   await runTransaction(db, async (transaction) => {
-    // 1. Obtener el documento de solicitud
+    // 1. Obtener la solicitud
     const requestRef = doc(db, "assignmentRequests", requestId);
     const requestDoc = await transaction.get(requestRef);
-    if (!requestDoc.exists()) {
-      throw new Error("Solicitud no encontrada.");
-    }
+    if (!requestDoc.exists()) throw new Error("Solicitud no encontrada.");
     const requestData = requestDoc.data() as Omit<AssignmentRequest, 'id'>;
 
-    // 2. Obtener el documento de usuario del empleado asignado para recuperar su UID
+    // 2. Obtener datos del empleado
     const userRef = doc(db, "users", requestData.employeeId);
     const userDoc = await transaction.get(userRef);
-    if (!userDoc.exists() || !userDoc.data()?.uid) {
-      throw new Error("El documento del empleado asignado no es válido o no tiene un UID de autenticación.");
-    }
+    if (!userDoc.exists() || !userDoc.data()?.uid) throw new Error("El empleado no es válido.");
     const employeeUid = userDoc.data()?.uid;
 
-    // 3. Obtener el activo de origen del stock
-    const stockAssetRef = doc(db, "assets", requestData.assetId);
-    const stockAssetDoc = await transaction.get(stockAssetRef);
-    if (!stockAssetDoc.exists()) {
-      throw new Error("Activo en stock no encontrado.");
-    }
-    // CORRECCIÓN: Asegurarse de que el activo que se va a asignar esté realmente en stock.
-    if (stockAssetDoc.data().status !== 'en stock') {
-      throw new Error("Activo en stock no encontrado.");
-    }
-    const stockAssetData = stockAssetDoc.data();
+    // 3. Determinar si el activo es serializable
+    const genericAssetRef = doc(db, "assets", requestData.assetId);
+    const genericAssetDoc = await transaction.get(genericAssetRef);
+    if (!genericAssetDoc.exists()) throw new Error("El tipo de activo solicitado no existe.");
+    const isSerializable = ['equipo_de_computo', 'herramienta_electrica'].includes(genericAssetDoc.data().tipo);
 
-    // 4. Validar stock y número de serie
-    const isSerializable = ['equipo_de_computo', 'herramienta_electrica'].includes(stockAssetData.tipo);
-    if (isSerializable && !serialNumber) {
-      throw new Error("Se requiere un número de serial para este tipo de activo.");
-    }
-    if (isSerializable && requestData.quantity !== 1) {
-      throw new Error("No se puede asignar más de una unidad de un activo con serial en una sola solicitud.");
-    }
-    const currentStock = stockAssetData.stock || 0;
-    if (currentStock < requestData.quantity) {
-      throw new Error(`Stock insuficiente. Stock actual: ${currentStock}, Solicitado: ${requestData.quantity}.`);
-    }
+    if (isSerializable) {
+      // --- LÓGICA PARA ACTIVOS SERIALIZABLES ---
+      if (!serialNumber) throw new Error("Se requiere un número de serial para este tipo de activo.");
+      if (requestData.quantity !== 1) throw new Error("No se puede asignar más de una unidad de un activo con serial.");
 
-    // 5. Crear un nuevo documento de activo para el empleado
-    const newAssetForEmployeeRef = doc(collection(db, "assets"));
-    transaction.set(newAssetForEmployeeRef, {
-      name: stockAssetData.name,
-      reference: stockAssetData.reference || '',
-      tipo: stockAssetData.tipo,
-      serial: serialNumber || null,
-      status: 'recibido pendiente',
-      employeeId: requestData.employeeId,
-      employeeUid: employeeUid, // Agregar el UID para las reglas de seguridad
-      employeeName: requestData.employeeName,
-      assignedDate: Timestamp.now(),
-      stock: requestData.quantity, // La cantidad que se asigna al empleado
-      originalRequestId: requestId, // <-- Enlace a la solicitud original
-      originalReplacementRequestId: requestData.originalReplacementRequestId || null, // <-- Propagar el ID de reemplazo
-      history: [], // Inicializar historial
-    });
+      // Buscar el activo específico por su serial
+      const assetWithSerialQuery = query(
+        collection(db, "assets"),
+        where("serial", "==", serialNumber),
+        where("status", "==", "en stock")
+      );
+      const assetWithSerialSnapshot = await getDocs(assetWithSerialQuery);
 
-    // Agregar evento de historial para el activo recién creado
-    addAssetHistoryEvent(
-      transaction,
-      newAssetForEmployeeRef,
-      "Asignación Creada",
-      `Activo enviado a ${requestData.employeeName}. Transportadora: ${carrier}, Guía: ${trackingNumber}.`
-    );
+      if (assetWithSerialSnapshot.empty) {
+        throw new Error(`El activo con serial '${serialNumber}' no está disponible o no existe.`);
+      }
+      const stockAssetToAssignRef = assetWithSerialSnapshot.docs[0].ref;
 
-    // 6. Disminuir el stock del activo de origen
-    transaction.update(stockAssetRef, { stock: currentStock - requestData.quantity });
+      // Re-asignar el activo existente al empleado
+      transaction.update(stockAssetToAssignRef, {
+        status: 'recibido pendiente',
+        employeeId: requestData.employeeId,
+        employeeUid: employeeUid,
+        employeeName: requestData.employeeName,
+        assignedDate: Timestamp.now(),
+        originalRequestId: requestId,
+        originalReplacementRequestId: requestData.originalReplacementRequestId || null,
+      });
+
+      addAssetHistoryEvent(
+        transaction,
+        stockAssetToAssignRef,
+        "Asignación Creada",
+        `Activo enviado a ${requestData.employeeName}. Transportadora: ${carrier}, Guía: ${trackingNumber}.`,
+        actor
+      );
+
+    } else {
+      // --- LÓGICA PARA ACTIVOS NO SERIALIZABLES ---
+      const stockAssetRef = genericAssetRef;
+      const stockAssetData = genericAssetDoc.data();
+      const currentStock = stockAssetData.stock || 0;
+      if (currentStock < requestData.quantity) {
+        throw new Error(`Stock insuficiente. Stock actual: ${currentStock}, Solicitado: ${requestData.quantity}.`);
+      }
+
+      // Crear un nuevo documento de activo para el empleado
+      const newAssetForEmployeeRef = doc(collection(db, "assets"));
+      transaction.set(newAssetForEmployeeRef, {
+        name: stockAssetData.name,
+        reference: stockAssetData.reference || '',
+        tipo: stockAssetData.tipo,
+        serial: null,
+        status: 'recibido pendiente',
+        employeeId: requestData.employeeId,
+        employeeUid: employeeUid,
+        employeeName: requestData.employeeName,
+        assignedDate: Timestamp.now(),
+        stock: requestData.quantity,
+        originalRequestId: requestId,
+        originalReplacementRequestId: requestData.originalReplacementRequestId || null,
+        history: [],
+      });
+
+      addAssetHistoryEvent(
+        transaction,
+        newAssetForEmployeeRef,
+        "Asignación Creada",
+        `Activo enviado a ${requestData.employeeName}. Transportadora: ${carrier}, Guía: ${trackingNumber}.`,
+        actor
+      );
+
+      // Disminuir el stock del activo de origen
+      transaction.update(stockAssetRef, { stock: currentStock - requestData.quantity });
+    }
 
     // 7. Actualizar la solicitud original para marcarla como enviada
     transaction.update(requestRef, {
       status: 'enviado',
       trackingNumber,
       carrier,
-      sentDate: Timestamp.now(), // <-- CORRECCIÓN: Guardar la fecha de envío
+      sentDate: Timestamp.now(),
     });
   });
 };
@@ -626,6 +650,10 @@ export const decommissionAsset = async (
   };
   const compressedFile = await imageCompression(imageFile, options);
   const imageUrl = await fileToBase64(compressedFile);
+
+  if (!imageUrl) {
+    throw new Error("La imagen de evidencia no pudo ser procesada a Base64.");
+  }
 
   // 2. Ejecutar la transacción en Firestore
   await runTransaction(db, async (transaction) => {
@@ -1218,6 +1246,21 @@ export const getAssetById = async (assetId: string): Promise<Asset | null> => {
 };
 
 /**
+ * Obtiene un activo basado en el ID de la solicitud de asignación original.
+ * @param requestId - El ID de la solicitud de asignación original.
+ * @returns Una promesa que se resuelve en el objeto del activo o null si no se encuentra.
+ */
+export const getAssetByRequestId = async (requestId: string): Promise<Asset | null> => {
+    const q = query(collection(db, "assets"), where("originalRequestId", "==", requestId));
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) {
+        return null;
+    }
+    const docSnap = querySnapshot.docs[0];
+    return { id: docSnap.id, ...docSnap.data() } as Asset;
+};
+
+/**
  * Envía una solicitud de reemplazo. Sube una imagen de justificación directamente
  * a Firebase Storage y luego crea el documento de solicitud en Firestore dentro de una transacción.
  * @param requestData - Los datos de la solicitud, incluyendo el archivo de imagen.
@@ -1228,7 +1271,11 @@ const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
+    reader.onload = () => {
+      // The result will be in the format "data:image/png;base64,iVBORw0KGgo..."
+      // We just need to ensure it's correctly passed.
+      resolve(reader.result as string);
+    };
     reader.onerror = (error) => reject(error);
   });
 };

@@ -52,7 +52,8 @@ import {
     AssetHistoryEvent,
     Asset,
     getAssetById,
-    getAvailableSerials
+    getAvailableSerials,
+    getDevolutionProcesses // Import the function to get pending processes
 } from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as XLSX from 'xlsx';
@@ -70,6 +71,7 @@ export default function LogisticaPage() {
   const [assignmentRequests, setAssignmentRequests] = useState<AssignmentRequest[]>([]);
   const [requestHistory, setRequestHistory] = useState<AssignmentRequest[]>([]);
   const [completedProcesses, setCompletedProcesses] = useState<DevolutionProcess[]>([]);
+  const [pendingDevolutionProcesses, setPendingDevolutionProcesses] = useState<DevolutionProcess[]>([]); // New state for pending devolutions
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [assetHistory, setAssetHistory] = useState<AssetHistoryEvent[]>([]);
   const [historyAsset, setHistoryAsset] = useState<Asset | null>(null);
@@ -104,14 +106,16 @@ export default function LogisticaPage() {
   // Función para obtener todos los datos necesarios para la página de logística.
   const fetchAllData = useCallback(async () => {
     try {
-        const [assignRequests, allRequests, completedDevolutions] = await Promise.all([
+        const [assignRequests, allRequests, completedDevolutions, pendingDevolutions] = await Promise.all([
             getAssignmentRequestsForLogistics(),
             getAllAssignmentRequests(100),
             getCompletedDevolutionProcesses(),
+            getDevolutionProcesses(), // Fetch pending devolution processes
         ]);
         setAssignmentRequests(assignRequests);
         setRequestHistory(allRequests.requests);
         setCompletedProcesses(completedDevolutions);
+        setPendingDevolutionProcesses(pendingDevolutions); // Update the new state
     } catch (error) {
         console.error("Error fetching data:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos.' });
@@ -397,7 +401,12 @@ setShowRejectionModal(true);
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="add-assets">Ingreso de Activos</TabsTrigger>
           <TabsTrigger value="assignments">Solicitudes de Asignación <Badge className="ml-2">{assignmentRequests.length}</Badge></TabsTrigger>
-          <TabsTrigger value="devolutions">Procesos de Devolución</TabsTrigger>
+          <TabsTrigger value="devolutions" className={pendingDevolutionProcesses.length > 0 ? "text-destructive" : ""}>
+            Procesos de Devolución
+            {pendingDevolutionProcesses.length > 0 && (
+              <Badge variant="destructive" className="ml-2">{pendingDevolutionProcesses.length}</Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="history">Historial</TabsTrigger>
         </TabsList>
 
@@ -634,7 +643,7 @@ setShowRejectionModal(true);
                 {assetHistory.map((event, index) => {
                   const parts = event.description.split('|EVIDENCE_IMG:');
                   const descriptionText = parts[0];
-                  const imageUrl = parts.length > 1 ? `data:image/jpeg;base64,${parts[1]}` : null;
+                  const imageUrl = parts.length > 1 ? parts[1] : null; // Corrected: parts[1] already contains the full data URL
 
                   return (
                     <TableRow key={index}>
