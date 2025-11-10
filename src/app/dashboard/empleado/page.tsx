@@ -190,6 +190,7 @@ export default function EmpleadoPage() {
       await submitReplacementRequest({
         employeeId: userData.id,
         employeeName: userData.name,
+        masterId: userData.invitedBy, // <-- AÑADIDO
         assetId: assetToReplace.id,
         assetName: assetToReplace.name,
         serial: assetToReplace.serial || 'N/A',

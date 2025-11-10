@@ -659,7 +659,7 @@ export const decommissionAsset = async (
       transaction,
       assetRef,
       "Activo Dado de Baja",
-      `Dado de baja por ${actor.name}. Motivo: ${justification}. Evidencia: ${imageUrl.substring(0, 50)}...`,
+      `Dado de baja por ${actor.name}. Motivo: ${justification}.|EVIDENCE_IMG:${imageUrl}`,
       actor
     );
   });
@@ -1108,7 +1108,6 @@ export const getPendingReplacementRequestsForEmployee = async (employeeId: strin
 export const confirmAssetReceipt = async (assetId: string, actor: { id: string; name: string }): Promise<void> => {
   await runTransaction(db, async (transaction) => {
     // --- FASE DE LECTURA ---
-    // Todas las lecturas deben ocurrir antes que cualquier escritura.
     const newAssetRef = doc(db, "assets", assetId);
     const newAssetDoc = await transaction.get(newAssetRef);
 
@@ -1118,6 +1117,7 @@ export const confirmAssetReceipt = async (assetId: string, actor: { id: string; 
 
     const newAssetData = newAssetDoc.data();
     let oldAssetRef: any = null;
+    let assignmentRequestRef: any = null;
 
     // Si es un reemplazo, leemos la solicitud original para encontrar el activo antiguo.
     if (newAssetData.originalReplacementRequestId) {
@@ -1129,6 +1129,11 @@ export const confirmAssetReceipt = async (assetId: string, actor: { id: string; 
       }
     }
 
+    // Obtenemos la referencia a la solicitud de asignación original
+    if (newAssetData.originalRequestId) {
+      assignmentRequestRef = doc(db, "assignmentRequests", newAssetData.originalRequestId);
+    }
+
     // --- FASE DE ESCRITURA ---
     // Ahora que todas las lecturas están hechas, podemos escribir.
     transaction.update(newAssetRef, { status: 'activo' });
@@ -1137,6 +1142,11 @@ export const confirmAssetReceipt = async (assetId: string, actor: { id: string; 
     if (oldAssetRef) {
       transaction.update(oldAssetRef, { status: 'reemplazado' });
       addAssetHistoryEvent(transaction, oldAssetRef, "Activo Reemplazado", `Reemplazado por un nuevo activo.`, actor);
+    }
+
+    // Actualizamos la solicitud de asignación original para cerrar el ciclo
+    if (assignmentRequestRef) {
+      transaction.update(assignmentRequestRef, { status: 'recibido a conformidad' });
     }
   });
 };
@@ -1224,7 +1234,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 export const submitReplacementRequest = async (
-  requestData: Omit<ReplacementRequest, 'id' | 'date' | 'status' | 'imageUrl' | 'masterId'> & { imageFile: File }
+  requestData: Omit<ReplacementRequest, 'id' | 'date' | 'status' | 'imageUrl'> & { imageFile: File }
 ): Promise<void> => {
   const { imageFile, ...dataForDb } = requestData;
 
@@ -1234,9 +1244,9 @@ export const submitReplacementRequest = async (
 
   // Paso 1: Comprimir la imagen en el cliente antes de convertirla.
   const options = {
-    maxSizeMB: 0.5, // Apuntar a un tamaño máximo de 0.5 MB
-    maxWidthOrHeight: 800, // Redimensionar a un máximo de 800px en el lado más largo
-    useWebWorker: true, // Usar Web Worker para no bloquear la UI
+    maxSizeMB: 0.5,
+    maxWidthOrHeight: 800,
+    useWebWorker: true,
   };
 
   let compressedFile;
@@ -1249,17 +1259,14 @@ export const submitReplacementRequest = async (
   // Paso 2: Convertir la imagen comprimida a una cadena Base64.
   const imageUrl = await fileToBase64(compressedFile);
 
-  // Paso 3: Ejecutar la transacción de Firestore, guardando la cadena Base64 en el campo imageUrl.
+  // Paso 3: Ejecutar la transacción de Firestore.
   await runTransaction(db, async (transaction) => {
-    const userRef = doc(db, "users", dataForDb.employeeId);
-    const userDoc = await transaction.get(userRef);
-    if (!userDoc.exists() || !userDoc.data()?.invitedBy) {
-      throw new Error("No se pudo encontrar el master asociado a este usuario.");
+    if (!dataForDb.masterId) {
+      throw new Error("El masterId es requerido para crear una solicitud de reemplazo.");
     }
-    const masterId = userDoc.data().invitedBy;
 
     const newRequestRef = doc(collection(db, "replacementRequests"));
-    transaction.set(newRequestRef, { ...dataForDb, masterId, imageUrl, date: Timestamp.now(), status: 'pendiente de aprobacion master' });
+    transaction.set(newRequestRef, { ...dataForDb, imageUrl, date: Timestamp.now(), status: 'pendiente de aprobacion master' });
 
     const assetRef = doc(db, "assets", dataForDb.assetId);
     transaction.update(assetRef, { status: 'reemplazo_solicitado' });

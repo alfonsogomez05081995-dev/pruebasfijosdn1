@@ -58,6 +58,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import * as XLSX from 'xlsx';
 import LogisticsDevolutionPanel from "@/components/logistic/LogisticsDevolutionPanel";
 import { formatFirebaseTimestamp } from "@/lib/utils";
+import { ImagePreviewModal } from "@/components/ui/ImagePreviewModal";
 
 // Define el componente de la página de logística.
 export default function LogisticaPage() {
@@ -72,6 +73,7 @@ export default function LogisticaPage() {
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [assetHistory, setAssetHistory] = useState<AssetHistoryEvent[]>([]);
   const [historyAsset, setHistoryAsset] = useState<Asset | null>(null);
+  const [imageToPreview, setImageToPreview] = useState<string | null>(null);
 
   // Estados para los formularios de la página.
   const [assetReference, setAssetReference] = useState('');
@@ -588,8 +590,9 @@ setShowRejectionModal(true);
                       <TableCell>{req.employeeName}</TableCell>
                       <TableCell>
                         <Badge variant={
-                          req.status === 'enviado' ? 'default' :
-                          req.status === 'pendiente de envío' ? 'secondary' : 
+                          req.status === 'recibido a conformidad' ? 'default' :
+                          req.status === 'enviado' ? 'secondary' :
+                          req.status === 'pendiente de envío' ? 'outline' :
                           req.status === 'rechazado' ? 'destructive' : 'outline'
                         }>{req.status}</Badge>
                       </TableCell>
@@ -604,9 +607,13 @@ setShowRejectionModal(true);
         </TabsContent>
       </Tabs>
 
+      {imageToPreview && (
+        <ImagePreviewModal imageUrl={imageToPreview} onClose={() => setImageToPreview(null)} />
+      )}
+
       {/* Modal para ver historial de activo */}
       <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
-        <DialogContent className="sm:max-w-[625px]">
+        <DialogContent className="sm:max-w-[725px]">
           <DialogHeader>
             <DialogTitle>Historial del Activo: {historyAsset?.name}</DialogTitle>
             <DialogDescription>
@@ -620,16 +627,31 @@ setShowRejectionModal(true);
                   <TableHead>Fecha</TableHead>
                   <TableHead>Evento</TableHead>
                   <TableHead>Descripción</TableHead>
+                  <TableHead>Evidencia</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {assetHistory.map((event, index) => (
-                  <TableRow key={index}>
-                    <TableCell>{event.formattedDate}</TableCell>
-                    <TableCell>{event.event}</TableCell>
-                    <TableCell>{event.description}</TableCell>
-                  </TableRow>
-                ))}
+                {assetHistory.map((event, index) => {
+                  const parts = event.description.split('|EVIDENCE_IMG:');
+                  const descriptionText = parts[0];
+                  const imageUrl = parts.length > 1 ? `data:image/jpeg;base64,${parts[1]}` : null;
+
+                  return (
+                    <TableRow key={index}>
+                      <TableCell>{event.formattedDate}</TableCell>
+                      <TableCell>{event.event}</TableCell>
+                      <TableCell>{descriptionText}</TableCell>
+                      <TableCell>
+                        {imageUrl && (
+                          <button onClick={() => setImageToPreview(imageUrl)} className="w-16 h-16 relative border rounded-md overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={imageUrl} alt="Thumbnail de evidencia" className="w-full h-full object-cover" />
+                          </button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

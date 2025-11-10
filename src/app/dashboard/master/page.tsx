@@ -67,6 +67,9 @@ import {
   DevolutionProcess,
 } from "@/lib/services";
 
+import { ImagePreviewModal } from "@/components/ui/ImagePreviewModal";
+import Image from 'next/image';
+
 // Define el componente de la página del Master.
 export default function MasterPage() {
   // Hooks para manejar el estado de la autenticación, el enrutamiento y las notificaciones.
@@ -81,6 +84,7 @@ export default function MasterPage() {
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
   const [assignmentHistory, setAssignmentHistory] = useState<any[]>([]);
   const [devolutionProcesses, setDevolutionProcesses] = useState<DevolutionProcess[]>([]);
+  const [imageToPreview, setImageToPreview] = useState<string | null>(null);
 
   // Estados para los diálogos de rechazo.
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
@@ -332,7 +336,12 @@ export default function MasterPage() {
       <Tabs defaultValue="assignments" className="w-full">
         <TabsList className={`grid w-full ${userData.role === 'master' ? 'grid-cols-6' : 'grid-cols-5'}`}>
           <TabsTrigger value="assignments">Asignaciones</TabsTrigger>
-          <TabsTrigger value="requests">Solicitudes</TabsTrigger>
+          <TabsTrigger value="requests" className={replacementRequests.length > 0 ? "text-destructive" : ""}>
+            Solicitudes
+            {replacementRequests.length > 0 && (
+              <Badge variant="destructive" className="ml-2">{replacementRequests.length}</Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="devolutions">Devoluciones</TabsTrigger>
           <TabsTrigger value="users">Gestión de Usuarios</TabsTrigger>
           <TabsTrigger value="history">Historial de Asignaciones</TabsTrigger>
@@ -464,9 +473,12 @@ export default function MasterPage() {
                         {request.justification || 'N/A'}
                       </TableCell>
                       <TableCell>
-                        <a href={request.imageUrl} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">
-                          Ver Imagen <ExternalLink className="h-4 w-4" />
-                        </a>
+                        {request.imageUrl && (
+                          <button onClick={() => setImageToPreview(request.imageUrl)} className="w-16 h-16 relative border rounded-md overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={request.imageUrl} alt="Thumbnail de evidencia" className="w-full h-full object-cover" />
+                          </button>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-2 justify-end">
@@ -654,7 +666,11 @@ export default function MasterPage() {
                       <TableCell className="hidden lg:table-cell">{req.assignmentType === 'primera_vez' ? 'Primera Vez' : req.assignmentType === 'reposicion' ? 'Reposición' : 'N/A'}</TableCell>
                       <TableCell className="max-w-[150px] truncate" title={req.justification || 'No registrada'}>{req.justification || 'N/A'}</TableCell>
                       <TableCell>
-                        <Badge variant={req.status === 'enviado' ? 'default' : req.status === 'rechazado' ? 'destructive' : 'secondary'}>{req.status}</Badge>
+                        <Badge variant={
+                          req.status === 'recibido a conformidad' ? 'default' :
+                          req.status === 'enviado' ? 'secondary' : 
+                          req.status === 'rechazado' ? 'destructive' : 'outline'
+                        }>{req.status}</Badge>
                       </TableCell>
                       <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
                     </TableRow>
@@ -682,6 +698,10 @@ export default function MasterPage() {
         </TabsContent>
         
       </Tabs>
+
+      {imageToPreview && (
+        <ImagePreviewModal imageUrl={imageToPreview} onClose={() => setImageToPreview(null)} />
+      )}
 
       {/* Diálogo para Editar Usuario */}
       <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
