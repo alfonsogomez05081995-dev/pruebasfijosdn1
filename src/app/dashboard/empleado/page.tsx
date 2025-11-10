@@ -242,6 +242,35 @@ export default function EmpleadoPage() {
   return (
     <>
       <h1 className="text-lg font-semibold md:text-2xl mb-4">Portal del Empleado</h1>
+      
+      {/* Card para el Estado de Paz y Salvo */}
+      {userData.devolutionPazYSalvoStatus === 'completed' && (
+        <Card className="mb-6 bg-green-50 border-green-200">
+          <CardHeader className="flex-row items-center gap-4">
+            <CheckCircle className="h-8 w-8 text-green-600" />
+            <div>
+              <CardTitle className="text-green-800">Paz y Salvo: Completado</CardTitle>
+              <CardDescription className="text-green-700">
+                Su proceso de devolución de activos ha sido completado exitosamente.
+              </CardDescription>
+            </div>
+          </CardHeader>
+        </Card>
+      )}
+      {userData.devolutionPazYSalvoStatus === 'pending' && (
+        <Card className="mb-6 bg-blue-50 border-blue-200">
+          <CardHeader className="flex-row items-center gap-4">
+            <RefreshCw className="h-8 w-8 text-blue-600 animate-spin" />
+            <div>
+              <CardTitle className="text-blue-800">Devolución en Proceso</CardTitle>
+              <CardDescription className="text-blue-700">
+                Ha iniciado un proceso de devolución. Logística está verificando sus activos.
+              </CardDescription>
+            </div>
+          </CardHeader>
+        </Card>
+      )}
+
       <Tabs defaultValue="pending" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="pending">Activos Pendientes <Badge className="ml-2">{pendingAssets.length}</Badge></TabsTrigger>

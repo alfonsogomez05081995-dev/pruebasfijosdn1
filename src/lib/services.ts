@@ -251,8 +251,13 @@ export const getInventoryItems = async (userRole: Role): Promise<Asset[]> => {
         }
         if (asset.status === 'en stock') {
           nonSerializedAssets[ref].totalStock! += asset.stock || 0;
-        } else if (asset.employeeName) {
-          nonSerializedAssets[ref].assignedTo!.push({ employeeName: asset.employeeName, quantity: asset.stock || 1 });
+        } else if (asset.employeeName && asset.status !== 'baja') {
+          nonSerializedAssets[ref].assignedTo!.push({ 
+              employeeName: asset.employeeName, 
+              quantity: asset.stock || 1,
+              // Opcional: puedes añadir el estado del activo aquí si es útil para la UI
+              // status: asset.status 
+          });
         }
       }
     });
@@ -572,6 +577,32 @@ export const getDevolutionProcesses = async (): Promise<DevolutionProcess[]> => 
     });
 };
 
+export const getCompletedDevolutionProcesses = async (): Promise<DevolutionProcess[]> => {
+    const q = query(collection(db, "devolutionProcesses"), where("status", "==", "completado"), orderBy("date", "desc"));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => {
+        const data = doc.data() as DevolutionProcess;
+        return {
+            ...data,
+            id: doc.id,
+            formattedDate: formatFirebaseTimestamp(data.date),
+        };
+    });
+};
+
+export const getDevolutionProcessesForMaster = async (masterId: string): Promise<DevolutionProcess[]> => {
+    const q = query(collection(db, "devolutionProcesses"), where("masterId", "==", masterId), orderBy("date", "desc"));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => {
+        const data = doc.data() as DevolutionProcess;
+        return {
+            ...data,
+            id: doc.id,
+            formattedDate: formatFirebaseTimestamp(data.date),
+        };
+    });
+};
+
 /**
  * Da de baja un activo devuelto, adjuntando una justificación y una imagen de evidencia.
  * @param processId - El ID del proceso de devolución.
@@ -601,9 +632,16 @@ export const decommissionAsset = async (
     const processRef = doc(db, "devolutionProcesses", processId);
     const assetRef = doc(db, "assets", assetId);
 
-    const processDoc = await transaction.get(processRef);
+    const [processDoc, assetDoc] = await Promise.all([
+        transaction.get(processRef),
+        transaction.get(assetRef)
+    ]);
+
     if (!processDoc.exists()) {
       throw new Error("Proceso de devolución no encontrado.");
+    }
+    if (!assetDoc.exists()) {
+        throw new Error("El activo a dar de baja no fue encontrado.");
     }
 
     // Marcar el activo como verificado/procesado en el documento de devolución
@@ -633,32 +671,92 @@ export const decommissionAsset = async (
  * @param assetId - El ID del activo a verificar.
  * @throws Si el proceso de devolución no se encuentra.
  */
-export const verifyAssetReturn = async (processId: string, assetId: string): Promise<void> => {
+export const verifyAssetReturn = async (processId: string, assetId: string, actor: { id: string; name: string }): Promise<void> => {
     await runTransaction(db, async (transaction) => {
-        // Esta función ahora solo maneja el retorno a stock.
         const processRef = doc(db, "devolutionProcesses", processId);
-        const assetRef = doc(db, "assets", assetId);
+        const assetToReturnRef = doc(db, "assets", assetId);
 
-        const processDoc = await transaction.get(processRef);
+        const [processDoc, assetToReturnDoc] = await Promise.all([
+            transaction.get(processRef),
+            transaction.get(assetToReturnRef)
+        ]);
+
         if (!processDoc.exists()) {
             throw new Error("Proceso de devolución no encontrado.");
         }
+        if (!assetToReturnDoc.exists()) {
+            throw new Error("El activo a devolver no fue encontrado.");
+        }
 
         const processData = processDoc.data() as DevolutionProcess;
-        const updatedAssets = processData.assets.map(asset => 
+        const assetToReturnData = assetToReturnDoc.data() as Asset;
+        const isSerializable = ['equipo_de_computo', 'herramienta_electrica'].includes(assetToReturnData.tipo);
+
+        // Marcar el activo como verificado en el proceso de devolución
+        const updatedAssets = processData.assets.map(asset =>
             asset.id === assetId ? { ...asset, verified: true } : asset
         );
-
         transaction.update(processRef, { assets: updatedAssets });
-        // Se asegura de que el stock sea 1 si es un activo serializable, o se mantiene si no lo es.
-        transaction.update(assetRef, { status: 'en stock', employeeId: '', employeeName: '' });
 
-        addAssetHistoryEvent(
-            transaction,
-            assetRef,
-            "Devolución Verificada",
-            "Logística verificó la devolución del activo. El activo vuelve a estar en stock."
-        );
+        if (isSerializable) {
+            // Para activos serializables, simplemente se actualiza su estado a 'en stock'
+            transaction.update(assetToReturnRef, {
+                status: 'en stock',
+                employeeId: '',
+                employeeName: '',
+                stock: 1
+            });
+            addAssetHistoryEvent(
+                transaction,
+                assetToReturnRef,
+                "Devolución Verificada",
+                `Logística (${actor.name}) verificó la devolución. El activo vuelve a estar en stock.`,
+                actor
+            );
+        } else {
+            // Para activos no serializables, se busca el registro principal en stock
+            const stockAssetQuery = query(
+                collection(db, "assets"),
+                where("reference", "==", assetToReturnData.reference),
+                where("status", "==", "en stock")
+            );
+            const stockAssetsSnapshot = await getDocs(stockAssetQuery);
+
+            if (stockAssetsSnapshot.empty) {
+                // Si no hay un registro en stock (raro, pero posible), se crea uno nuevo
+                const newStockAssetRef = doc(collection(db, "assets"));
+                transaction.set(newStockAssetRef, {
+                    ...assetToReturnData,
+                    status: 'en stock',
+                    stock: assetToReturnData.stock || 1,
+                    employeeId: '',
+                    employeeName: '',
+                    history: [],
+                });
+                addAssetHistoryEvent(
+                    transaction,
+                    newStockAssetRef,
+                    "Devolución y Creación en Stock",
+                    `Se devolvieron ${assetToReturnData.stock || 1} unidades y se creó un nuevo registro en stock.`,
+                    actor
+                );
+            } else {
+                // Si ya existe, se actualiza el stock
+                const mainStockAssetRef = stockAssetsSnapshot.docs[0].ref;
+                const mainStockAssetData = stockAssetsSnapshot.docs[0].data();
+                const newStock = (mainStockAssetData.stock || 0) + (assetToReturnData.stock || 1);
+                transaction.update(mainStockAssetRef, { stock: newStock });
+                addAssetHistoryEvent(
+                    transaction,
+                    mainStockAssetRef,
+                    "Devolución Verificada",
+                    `Se retornaron ${assetToReturnData.stock || 1} unidades al stock. Nuevo stock: ${newStock}.`,
+                    actor
+                );
+            }
+            // Finalmente, se elimina el registro del activo que tenía el empleado
+            transaction.delete(assetToReturnRef);
+        }
     });
 };
 
@@ -667,21 +765,56 @@ export const verifyAssetReturn = async (processId: string, assetId: string): Pro
  * @param processId - El ID del proceso de devolución a completar.
  * @throws Si el proceso no se encuentra o si no todos los activos han sido verificados.
  */
-export const completeDevolutionProcess = async (processId: string): Promise<void> => {
-    const processRef = doc(db, "devolutionProcesses", processId);
-    const processDoc = await getDoc(processRef);
-    if (!processDoc.exists()) {
-        throw new Error("Proceso de devolución no encontrado.");
-    }
-    const processData = processDoc.data() as DevolutionProcess;
-    const allVerified = processData.assets.every(asset => asset.verified);
+export const completeDevolutionProcess = async (processId: string, actor: { id: string; name: string }): Promise<void> => {
+    await runTransaction(db, async (transaction) => {
+        // --- FASE DE LECTURA ---
+        const processRef = doc(db, "devolutionProcesses", processId);
+        const processDoc = await transaction.get(processRef);
 
-    if (allVerified) {
-        await updateDoc(processRef, { status: 'completado' });
-    } else {
-        throw new Error("No todos los activos han sido verificados.");
-    }
+        if (!processDoc.exists()) {
+            throw new Error("Proceso de devolución no encontrado.");
+        }
+
+        const processData = processDoc.data() as DevolutionProcess;
+        const allVerified = processData.assets.every(asset => asset.verified);
+
+        if (!allVerified) {
+            throw new Error("No todos los activos han sido verificados. No se puede completar el proceso.");
+        }
+
+        // Leer todos los documentos de activos involucrados ANTES de escribir
+        const assetDocsToUpdate: { ref: any; data: Asset }[] = [];
+        for (const asset of processData.assets) {
+            const assetRef = doc(db, "assets", asset.id);
+            const assetDoc = await transaction.get(assetRef);
+            if (assetDoc.exists()) {
+                assetDocsToUpdate.push({ ref: assetRef, data: assetDoc.data() as Asset });
+            }
+        }
+
+        // --- FASE DE ESCRITURA ---
+        // Ahora que todas las lecturas están hechas, podemos escribir.
+
+        // 1. Marcar el proceso como completado
+        transaction.update(processRef, { status: 'completado' });
+
+        // 2. Actualizar el estado de paz y salvo del empleado
+        const employeeUserRef = doc(db, "users", processData.employeeId);
+        transaction.update(employeeUserRef, { devolutionPazYSalvoStatus: 'completed' });
+
+        // 3. Añadir el evento de historial a cada activo que todavía existe
+        for (const { ref } of assetDocsToUpdate) {
+            addAssetHistoryEvent(
+                transaction,
+                ref,
+                "Devolución Completada (Paz y Salvo)",
+                `El proceso de devolución para ${processData.employeeName} fue completado por ${actor.name}.`,
+                actor
+            );
+        }
+    });
 };
+
 
 
 // ------------------- SERVICIOS MAESTROS -------------------
@@ -1153,6 +1286,17 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
     const assetsForProcess = [];
     const actor = { id: employeeId, name: employeeName };
 
+    // Obtener información del master del empleado
+    const employeeUserRef = doc(db, "users", employeeId);
+    const employeeUserDoc = await getDoc(employeeUserRef);
+    if (!employeeUserDoc.exists() || !employeeUserDoc.data()?.invitedBy) {
+        throw new Error("No se pudo encontrar el master asociado a este empleado.");
+    }
+    const masterId = employeeUserDoc.data().invitedBy;
+    const masterUserRef = doc(db, "users", masterId);
+    const masterUserDoc = await getDoc(masterUserRef);
+    const masterName = masterUserDoc.exists() ? masterUserDoc.data().name : 'Master Desconocido';
+
     for (const assetDoc of assetsSnapshot.docs) {
         batch.update(assetDoc.ref, { status: 'en devolución' });
         const assetData = assetDoc.data();
@@ -1176,10 +1320,15 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
     batch.set(devolutionRef, {
         employeeId,
         employeeName,
+        masterId,
+        masterName,
         assets: assetsForProcess,
         status: 'iniciado',
         date: Timestamp.now(),
     });
+
+    // Actualizar el estado de paz y salvo del empleado a 'pending'
+    batch.update(employeeUserRef, { devolutionPazYSalvoStatus: 'pending' });
 
     await batch.commit();
 };

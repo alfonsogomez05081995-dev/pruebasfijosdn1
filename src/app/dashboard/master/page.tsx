@@ -61,8 +61,10 @@ import {
   getStockAssets,
   getAssignmentRequestsForMaster,
   approveReplacementRequest,
+  getDevolutionProcessesForMaster,
   Asset,
   ReplacementRequest,
+  DevolutionProcess,
 } from "@/lib/services";
 
 // Define el componente de la página del Master.
@@ -78,6 +80,7 @@ export default function MasterPage() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [stockAssets, setStockAssets] = useState<Asset[]>([]);
   const [assignmentHistory, setAssignmentHistory] = useState<any[]>([]);
+  const [devolutionProcesses, setDevolutionProcesses] = useState<DevolutionProcess[]>([]);
 
   // Estados para los diálogos de rechazo.
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
@@ -114,12 +117,13 @@ export default function MasterPage() {
     try {
       const isOriginalMaster = userData.role === 'master';
 
-      const [requests, fetchedEmployees, fetchedAssets, allSystemUsers, history] = await Promise.all([
+      const [requests, fetchedEmployees, fetchedAssets, allSystemUsers, history, devolutions] = await Promise.all([
         getReplacementRequestsForMaster(userData.id),
         getUsers('empleado', isOriginalMaster ? undefined : userData.id),
         getStockAssets(userData.role),
         getUsers(undefined, isOriginalMaster ? undefined : userData.id),
         getAssignmentRequestsForMaster(userData.id),
+        getDevolutionProcessesForMaster(userData.id),
       ]);
   
       setReplacementRequests(requests);
@@ -127,6 +131,7 @@ export default function MasterPage() {
       setStockAssets(fetchedAssets);
       setAllUsers(allSystemUsers);
       setAssignmentHistory(history);
+      setDevolutionProcesses(devolutions);
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudieron cargar los datos.' });
@@ -325,9 +330,10 @@ export default function MasterPage() {
     <>
       <h1 className="text-lg font-semibold md:text-2xl mb-4">Panel del Master</h1>
       <Tabs defaultValue="assignments" className="w-full">
-        <TabsList className={`grid w-full ${userData.role === 'master' ? 'grid-cols-5' : 'grid-cols-4'}`}>
+        <TabsList className={`grid w-full ${userData.role === 'master' ? 'grid-cols-6' : 'grid-cols-5'}`}>
           <TabsTrigger value="assignments">Asignaciones</TabsTrigger>
           <TabsTrigger value="requests">Solicitudes</TabsTrigger>
+          <TabsTrigger value="devolutions">Devoluciones</TabsTrigger>
           <TabsTrigger value="users">Gestión de Usuarios</TabsTrigger>
           <TabsTrigger value="history">Historial de Asignaciones</TabsTrigger>
           {userData.role === 'master' && (
@@ -476,6 +482,45 @@ export default function MasterPage() {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="devolutions">
+          <Card>
+            <CardHeader>
+              <CardTitle>Procesos de Devolución</CardTitle>
+              <CardDescription>
+                Supervise el estado de los procesos de devolución de sus empleados.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Empleado</TableHead>
+                    <TableHead>Fecha de Inicio</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Activos en Proceso</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {devolutionProcesses.length > 0 ? devolutionProcesses.map((process) => (
+                    <TableRow key={process.id}>
+                      <TableCell>{process.employeeName}</TableCell>
+                      <TableCell>{process.formattedDate}</TableCell>
+                      <TableCell>
+                        <Badge variant={process.status === 'completado' ? 'default' : 'secondary'}>{process.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {process.assets.map(a => a.name).join(', ')}
+                      </TableCell>
+                    </TableRow>
+                  )) : (
+                    <TableRow><TableCell colSpan={4} className="text-center">No hay procesos de devolución.</TableCell></TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

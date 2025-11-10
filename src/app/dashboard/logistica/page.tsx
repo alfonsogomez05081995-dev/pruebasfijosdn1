@@ -18,7 +18,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -29,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PackagePlus, Send, CheckCheck, Upload, AlertTriangle, Archive } from "lucide-react";
+import { PackagePlus, Send, CheckCheck, Upload, AlertTriangle, Archive, History } from "lucide-react";
 // Importaciones de hooks y contexto de autenticación.
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
@@ -42,20 +41,23 @@ import {
     getAssignmentRequestsForLogistics,
     getAllAssignmentRequests,
     processAssignmentRequest,
-    getDevolutionProcesses,
-    verifyAssetReturn,
-    completeDevolutionProcess,
     retryAssignment,
     archiveAssignment,
+    getCompletedDevolutionProcesses,
+    getAssetHistory,
     AssignmentRequest,
     AssetType,
-    DevolutionProcess,
     NewAssetData,
+    DevolutionProcess,
+    AssetHistoryEvent,
+    Asset,
     getAssetById,
     getAvailableSerials
 } from "@/lib/services";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import * as XLSX from 'xlsx';
+import LogisticsDevolutionPanel from "@/components/logistic/LogisticsDevolutionPanel";
+import { formatFirebaseTimestamp } from "@/lib/utils";
 
 // Define el componente de la página de logística.
 export default function LogisticaPage() {
@@ -65,8 +67,11 @@ export default function LogisticaPage() {
   const { toast } = useToast();
   // Estados para manejar las solicitudes de asignación, los procesos de devolución y el historial.
   const [assignmentRequests, setAssignmentRequests] = useState<AssignmentRequest[]>([]);
-  const [devolutionProcesses, setDevolutionProcesses] = useState<DevolutionProcess[]>([]);
   const [requestHistory, setRequestHistory] = useState<AssignmentRequest[]>([]);
+  const [completedProcesses, setCompletedProcesses] = useState<DevolutionProcess[]>([]);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [assetHistory, setAssetHistory] = useState<AssetHistoryEvent[]>([]);
+  const [historyAsset, setHistoryAsset] = useState<Asset | null>(null);
 
   // Estados para los formularios de la página.
   const [assetReference, setAssetReference] = useState('');
@@ -97,14 +102,14 @@ export default function LogisticaPage() {
   // Función para obtener todos los datos necesarios para la página de logística.
   const fetchAllData = useCallback(async () => {
     try {
-        const [assignRequests, devProcesses, allRequests] = await Promise.all([
+        const [assignRequests, allRequests, completedDevolutions] = await Promise.all([
             getAssignmentRequestsForLogistics(),
-            getDevolutionProcesses(),
             getAllAssignmentRequests(100),
+            getCompletedDevolutionProcesses(),
         ]);
         setAssignmentRequests(assignRequests);
-        setDevolutionProcesses(devProcesses);
         setRequestHistory(allRequests.requests);
+        setCompletedProcesses(completedDevolutions);
     } catch (error) {
         console.error("Error fetching data:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos.' });
@@ -224,30 +229,6 @@ setShowRejectionModal(true);
     } catch (error: any) {
         console.error("Error archiving request:", error);
         toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo archivar la solicitud." });
-    }
-  };
-
-  // Verifica la devolución de un activo.
-  const handleVerifyReturn = async (processId: string, assetId: string) => {
-    try {
-        await verifyAssetReturn(processId, assetId);
-        toast({ title: "Activo Verificado", description: "El activo ha sido marcado como devuelto y puesto en stock." });
-        await fetchAllData();
-    } catch (error: any) {
-        console.error("Error verificando activo:", error);
-        toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo verificar el activo." });
-    }
-  };
-
-  // Completa un proceso de devolución.
-  const handleCompleteProcess = async (processId: string) => {
-    try {
-        await completeDevolutionProcess(processId);
-        toast({ title: "Proceso Completado", description: "El proceso de devolución ha sido finalizado." });
-        await fetchAllData();
-    } catch (error: any) {
-        console.error("Error completando proceso:", error);
-        toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo completar el proceso." });
     }
   };
 
@@ -379,6 +360,28 @@ setShowRejectionModal(true);
     reader.readAsArrayBuffer(bulkFile);
   };
 
+  const handleShowHistory = async (assetId: string) => {
+    try {
+      const asset = await getAssetById(assetId);
+      if (!asset) {
+        toast({ variant: "destructive", title: "Error", description: "No se pudo encontrar el activo." });
+        return;
+      }
+      setHistoryAsset(asset);
+      const sortedHistory = (asset.history || [])
+        .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis())
+        .map(event => ({
+          ...event,
+          formattedDate: formatFirebaseTimestamp(event.timestamp),
+        }));
+      setAssetHistory(sortedHistory);
+      setHistoryDialogOpen(true);
+    } catch (error) {
+      console.error("Error fetching asset history:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo cargar el historial del activo." });
+    }
+  };
+
   // Muestra un mensaje de carga mientras se obtienen los datos del usuario.
   if (loading || !userData) {
     return <div>Cargando...</div>;
@@ -392,7 +395,7 @@ setShowRejectionModal(true);
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="add-assets">Ingreso de Activos</TabsTrigger>
           <TabsTrigger value="assignments">Solicitudes de Asignación <Badge className="ml-2">{assignmentRequests.length}</Badge></TabsTrigger>
-          <TabsTrigger value="devolutions">Procesos de Devolución <Badge className="ml-2">{devolutionProcesses.length}</Badge></TabsTrigger>
+          <TabsTrigger value="devolutions">Procesos de Devolución</TabsTrigger>
           <TabsTrigger value="history">Historial</TabsTrigger>
         </TabsList>
 
@@ -514,56 +517,51 @@ setShowRejectionModal(true);
         </TabsContent>
 
         <TabsContent value="devolutions">
-          <Card className="mt-6">
-              <CardHeader>
-                  <CardTitle>Procesos de Devolución en Curso</CardTitle>
-                  <CardDescription>Verifique la devolución física de los activos de los empleados que terminan su contrato.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                  <Accordion type="single" collapsible className="w-full">
-                  {devolutionProcesses.map(process => (
-                      <AccordionItem value={process.id} key={process.id}>
-                      <AccordionTrigger>{process.employeeName} - {process.assets.filter(a => !a.verified).length} activos pendientes</AccordionTrigger>
-                      <AccordionContent>
-                          <Table>
-                          <TableHeader>
-                              <TableRow>
-                              <TableHead>Activo</TableHead>
-                              <TableHead>Serial</TableHead>
-                              <TableHead>Estado</TableHead>
-                              <TableHead className="text-right">Acción</TableHead>
-                              </TableRow>
-                          </TableHeader>
-                          <TableBody>
+          <Tabs defaultValue="ongoing" className="w-full mt-6">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="ongoing">En Curso</TabsTrigger>
+              <TabsTrigger value="completed">Completados</TabsTrigger>
+            </TabsList>
+            <TabsContent value="ongoing">
+              <LogisticsDevolutionPanel onAssetClick={handleShowHistory} />
+            </TabsContent>
+            <TabsContent value="completed">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Procesos de Devolución Completados</CardTitle>
+                  <CardDescription>Historial de procesos de devolución que han sido finalizados.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Empleado</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Activos</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {completedProcesses.map((process) => (
+                        <TableRow key={process.id}>
+                          <TableCell>{process.employeeName}</TableCell>
+                          <TableCell>{process.formattedDate}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-2">
                               {process.assets.map(asset => (
-                              <TableRow key={asset.id}>
-                                  <TableCell>{asset.name}</TableCell>
-                                  <TableCell>{asset.serial}</TableCell>
-                                  <TableCell>
-                                  <Badge variant={asset.verified ? 'default' : 'outline'}>{asset.verified ? 'Verificado' : 'Pendiente'}</Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                  {!asset.verified && (
-                                      <Button size="sm" onClick={() => handleVerifyReturn(process.id, asset.id)}>
-                                      <CheckCheck className="h-4 w-4 mr-2" /> Verificar
-                                      </Button>
-                                  )}
-                                  </TableCell>
-                              </TableRow>
+                                <Button key={asset.id} variant="link" className="p-0 h-auto" onClick={() => handleShowHistory(asset.id)}>
+                                  {asset.name}
+                                </Button>
                               ))}
-                          </TableBody>
-                          </Table>
-                          {process.assets.every(a => a.verified) && (
-                              <div className="text-right mt-4">
-                                  <Button variant="secondary" onClick={() => handleCompleteProcess(process.id)}>Completar Proceso</Button>
-                              </div>
-                          )}
-                      </AccordionContent>
-                      </AccordionItem>
-                  ))}
-                  </Accordion>
-              </CardContent>
-          </Card>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="history">
@@ -605,6 +603,41 @@ setShowRejectionModal(true);
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Modal para ver historial de activo */}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-[625px]">
+          <DialogHeader>
+            <DialogTitle>Historial del Activo: {historyAsset?.name}</DialogTitle>
+            <DialogDescription>
+              A continuación se muestra el historial de movimientos para el activo seleccionado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Evento</TableHead>
+                  <TableHead>Descripción</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assetHistory.map((event, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{event.formattedDate}</TableCell>
+                    <TableCell>{event.event}</TableCell>
+                    <TableCell>{event.description}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setHistoryDialogOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal para procesar y reintentar envíos */}
       <Dialog open={showProcessModal} onOpenChange={setShowProcessModal}>

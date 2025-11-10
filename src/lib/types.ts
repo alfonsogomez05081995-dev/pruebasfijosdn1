@@ -14,6 +14,7 @@ export interface User {
   email: string; // Correo electrónico del usuario.
   role: Role; // Rol del usuario.
   status: 'invitado' | 'activo'; // Estado de la cuenta del usuario.
+  devolutionPazYSalvoStatus?: 'pending' | 'completed' | 'not_applicable'; // Estado del paz y salvo de devolución del empleado.
 }
 
 // Define los posibles estados de un activo.
@@ -89,6 +90,8 @@ export interface DevolutionProcess {
   id: string; // ID del documento en Firestore.
   employeeId: string; // ID del empleado que devuelve.
   employeeName: string; // Nombre del empleado.
+  masterId: string; // ID del master del empleado.
+  masterName: string; // Nombre del master del empleado.
   status: DevolutionStatus; // Estado del proceso.
   date: Timestamp; // Fecha de inicio del proceso.
   formattedDate?: string; // Fecha formateada.
