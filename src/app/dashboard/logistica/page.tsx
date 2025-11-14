@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PackagePlus, Send, CheckCheck, Upload, AlertTriangle, Archive, History } from "lucide-react";
+import { PackagePlus, Send, CheckCheck, Upload, AlertTriangle, Archive, History, FileText } from "lucide-react";
 // Importaciones de hooks y contexto de autenticación.
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
@@ -60,6 +60,7 @@ import * as XLSX from 'xlsx';
 import LogisticsDevolutionPanel from "@/components/logistic/LogisticsDevolutionPanel";
 import { formatFirebaseTimestamp } from "@/lib/utils";
 import { ImagePreviewModal } from "@/components/ui/ImagePreviewModal";
+import { generatePazYSalvoPDF } from "@/lib/pdfGenerator";
 
 // Define el componente de la página de logística.
 export default function LogisticaPage() {
@@ -388,6 +389,30 @@ setShowRejectionModal(true);
     }
   };
 
+  const handleGeneratePazYSalvo = async (process: DevolutionProcess) => {
+    toast({ title: 'Generando PDF...', description: 'Por favor espere.' });
+    try {
+      const assetsWithStatus = await Promise.all(
+        process.assets.map(async (assetInProcess) => {
+          const assetDoc = await getAssetById(assetInProcess.id);
+          let finalStatus = 'Desconocido';
+          if (assetDoc) {
+            finalStatus = assetDoc.status === 'baja' ? 'Dado de Baja' : 'Retornado a Stock';
+          }
+          return {
+            name: assetInProcess.name,
+            serial: assetInProcess.serial,
+            finalStatus: finalStatus,
+          };
+        })
+      );
+      generatePazYSalvoPDF(process, assetsWithStatus);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'No se pudo generar el certificado.' });
+    }
+  };
+
   // Muestra un mensaje de carga mientras se obtienen los datos del usuario.
   if (loading || !userData) {
     return <div>Cargando...</div>;
@@ -549,6 +574,7 @@ setShowRejectionModal(true);
                         <TableHead>Empleado</TableHead>
                         <TableHead>Fecha</TableHead>
                         <TableHead>Activos</TableHead>
+                        <TableHead className="text-right">Acción</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -564,6 +590,12 @@ setShowRejectionModal(true);
                                 </Button>
                               ))}
                             </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button size="sm" onClick={() => handleGeneratePazYSalvo(process)}>
+                              <FileText className="h-4 w-4 mr-2" />
+                              Generar Paz y Salvo
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
