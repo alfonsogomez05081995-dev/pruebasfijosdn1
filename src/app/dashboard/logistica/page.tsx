@@ -619,9 +619,11 @@ setShowRejectionModal(true);
                   <TableRow>
                     <TableHead>Activo</TableHead>
                     <TableHead>Empleado</TableHead>
+                    <TableHead>Fecha</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Guía</TableHead>
                     <TableHead>Transportadora</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -629,6 +631,7 @@ setShowRejectionModal(true);
                     <TableRow key={req.id}>
                       <TableCell>{req.assetName}</TableCell>
                       <TableCell>{req.employeeName}</TableCell>
+                      <TableCell>{req.formattedDate}</TableCell>
                       <TableCell>
                         <Badge variant={
                           req.status === 'recibido a conformidad' ? 'default' :
@@ -639,6 +642,12 @@ setShowRejectionModal(true);
                       </TableCell>
                       <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
                       <TableCell>{req.carrier || 'N/A'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="outline" size="sm" onClick={() => handleShowHistory(req.assetId)}>
+                            <History className="h-4 w-4 mr-2" />
+                            Ver Historial
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

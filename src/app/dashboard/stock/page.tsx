@@ -5,18 +5,20 @@ import { useEffect, useState, useCallback, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 // Importación de contextos y servicios personalizados
 import { useAuth } from '@/contexts/AuthContext';
-import { getStockAssets, updateAsset, deleteAsset } from '@/lib/services';
-import { Asset } from '@/lib/types';
+import { getStockAssets, updateAsset, deleteAsset, getAssetById } from '@/lib/services';
+import { Asset, AssetHistoryEvent } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 // Importación de componentes de la interfaz de usuario (UI)
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Download, Pencil, Trash2 } from 'lucide-react';
+import { Download, Pencil, Trash2, History } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ImagePreviewModal } from "@/components/ui/ImagePreviewModal";
+import { formatFirebaseTimestamp } from "@/lib/utils";
 // Importación de la librería para manejar archivos Excel
 import * as XLSX from 'xlsx';
 
@@ -45,6 +47,12 @@ export default function StockPage() {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   // Estado para los datos del formulario de edición
   const [editFormData, setEditFormData] = useState<Partial<Asset>>({});
+
+  // Estados para el historial del activo
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [assetHistory, setAssetHistory] = useState<AssetHistoryEvent[]>([]);
+  const [historyAsset, setHistoryAsset] = useState<Asset | null>(null);
+  const [imageToPreview, setImageToPreview] = useState<string | null>(null);
 
   // Función para obtener el inventario desde el backend, usando useCallback para memorizarla
   const fetchInventory = useCallback(async () => {
@@ -157,6 +165,28 @@ export default function StockPage() {
     setEditFormData(prev => ({ ...prev, [id]: value }));
   };
 
+  const handleShowHistory = async (assetId: string) => {
+    try {
+      const asset = await getAssetById(assetId);
+      if (!asset) {
+        toast({ variant: "destructive", title: "Error", description: "No se pudo encontrar el activo." });
+        return;
+      }
+      setHistoryAsset(asset);
+      const sortedHistory = (asset.history || [])
+        .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis())
+        .map(event => ({
+          ...event,
+          formattedDate: formatFirebaseTimestamp(event.timestamp),
+        }));
+      setAssetHistory(sortedHistory);
+      setHistoryDialogOpen(true);
+    } catch (error) {
+      console.error("Error fetching asset history:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo cargar el historial del activo." });
+    }
+  };
+
   // Muestra un mensaje de carga mientras se obtienen los datos del usuario
   if (loading || !userData) {
     return <div>Cargando...</div>;
@@ -193,8 +223,7 @@ export default function StockPage() {
                 <TableHead>Stock</TableHead>
                 <TableHead>Ubicación</TableHead>
                 <TableHead>Asignado a</TableHead>
-                {/* Muestra la columna de acciones solo si el usuario es 'master' */}
-                {userData.role === 'master' && <TableHead className="text-right">Acciones</TableHead>}
+                {(userData.role.startsWith('master') || userData.role === 'logistica') && <TableHead className="text-right">Acciones</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -210,15 +239,21 @@ export default function StockPage() {
                     <TableCell>{asset.stock || 0}</TableCell>
                     <TableCell>{asset.location || 'N/A'}</TableCell>
                     <TableCell>{asset.employeeName || 'N/A'}</TableCell>
-                    {/* Muestra los botones de acción solo para el rol 'master' */}
-                    {userData.role === 'master' && (
+                    {(userData.role.startsWith('master') || userData.role === 'logistica') && (
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenEditModal(asset)}>
-                          <Pencil className="h-4 w-4" />
+                        <Button variant="ghost" size="icon" onClick={() => handleShowHistory(asset.id)}>
+                          <History className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenDeleteModal(asset)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {userData.role.startsWith('master') && (
+                          <>
+                            <Button variant="ghost" size="icon" onClick={() => handleOpenEditModal(asset)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleOpenDeleteModal(asset)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </>
+                        )}
                       </TableCell>
                     )}
                   </TableRow>
@@ -226,7 +261,7 @@ export default function StockPage() {
               ) : (
                 // Muestra un mensaje si no hay activos en el inventario
                 <TableRow>
-                  <TableCell colSpan={userData.role === 'master' ? 9 : 8} className="text-center">No hay activos en el inventario.</TableCell>
+                  <TableCell colSpan={9} className="text-center">No hay activos en el inventario.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -283,6 +318,59 @@ export default function StockPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleDeleteAsset}>Eliminar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para ver historial de activo */}
+      {imageToPreview && (
+        <ImagePreviewModal imageUrl={imageToPreview} onClose={() => setImageToPreview(null)} />
+      )}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-[725px]">
+          <DialogHeader>
+            <DialogTitle>Historial del Activo: {historyAsset?.name}</DialogTitle>
+            <DialogDescription>
+              A continuación se muestra el historial de movimientos para el activo seleccionado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Evento</TableHead>
+                  <TableHead>Descripción</TableHead>
+                  <TableHead>Evidencia</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assetHistory.map((event, index) => {
+                  const parts = event.description.split('|EVIDENCE_IMG:');
+                  const descriptionText = parts[0];
+                  const imageUrl = parts.length > 1 ? parts[1] : null;
+
+                  return (
+                    <TableRow key={index}>
+                      <TableCell>{event.formattedDate}</TableCell>
+                      <TableCell>{event.event}</TableCell>
+                      <TableCell>{descriptionText}</TableCell>
+                      <TableCell>
+                        {imageUrl && (
+                          <button onClick={() => setImageToPreview(imageUrl)} className="w-16 h-16 relative border rounded-md overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={imageUrl} alt="Thumbnail de evidencia" className="w-full h-full object-cover" />
+                          </button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setHistoryDialogOpen(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
