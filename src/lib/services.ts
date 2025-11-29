@@ -419,6 +419,7 @@ export const processAssignmentRequest = async (
         employeeUid: employeeUid,
         employeeName: requestData.employeeName,
         assignedDate: Timestamp.now(),
+        requestDate: requestData.date, // Guardar fecha original de solicitud
         originalRequestId: requestId,
         originalReplacementRequestId: requestData.originalReplacementRequestId || null,
       });
@@ -452,6 +453,7 @@ export const processAssignmentRequest = async (
         employeeUid: employeeUid,
         employeeName: requestData.employeeName,
         assignedDate: Timestamp.now(),
+        requestDate: requestData.date, // Guardar fecha original de solicitud
         stock: requestData.quantity,
         originalRequestId: requestId,
         originalReplacementRequestId: requestData.originalReplacementRequestId || null,
@@ -901,9 +903,18 @@ export const sendAssignmentRequest = async (request: Omit<AssignmentRequest, 'id
     transaction.set(newRequestRef, {
       ...request,
       date: Timestamp.now(),
-      masterId: request.masterId, // <-- CORRECCIÓN: Asegurar que el masterId se guarde.
+      masterId: request.masterId, // Asegurar que el masterId se guarde.
       status: newStatus,
     });
+
+    // Añade un evento al historial del activo para registrar la solicitud inicial.
+    addAssetHistoryEvent(
+      transaction,
+      assetRef,
+      "Solicitud de Asignación",
+      `El Master ${request.masterName} solicitó la asignación para ${request.employeeName}.`,
+      { id: request.masterId || 'unknown', name: request.masterName || 'Master' }
+    );
 
     return { status: newStatus };
   });
@@ -938,6 +949,16 @@ export const sendBulkAssignmentRequests = async (
       date: Timestamp.now(),
       status: 'pendiente de envío',
     });
+
+    // Añade un evento al historial del activo para un seguimiento completo.
+    const assetRef = doc(db, "assets", request.assetId);
+    addAssetHistoryEvent(
+        batch,
+        assetRef,
+        "Solicitud de Asignación",
+        `El Master ${request.masterName} solicitó la asignación para ${request.employeeName}. Razón: ${request.justification}`,
+        { id: request.masterId, name: request.masterName }
+    );
   }
 
   await batch.commit();

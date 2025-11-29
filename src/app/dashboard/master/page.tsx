@@ -521,7 +521,7 @@ export default function MasterPage() {
                       </TableCell>
                       <TableCell>
                         {request.imageUrl && (
-                          <button onClick={() => setImageToPreview(request.imageUrl)} className="w-16 h-16 relative border rounded-md overflow-hidden">
+                          <button onClick={() => setImageToPreview(request.imageUrl || null)} className="w-16 h-16 relative border rounded-md overflow-hidden">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={request.imageUrl} alt="Thumbnail de evidencia" className="w-full h-full object-cover" />
                           </button>

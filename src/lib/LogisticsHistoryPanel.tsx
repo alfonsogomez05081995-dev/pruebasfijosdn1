@@ -21,8 +21,8 @@ export default function LogisticsHistoryPanel() {
             try {
                 setLoading(true);
                 // Llama a la función de servicio para obtener todas las solicitudes de asignación.
-                const data = await getAllAssignmentRequests();
-                setRequests(data);
+                const data = await getAllAssignmentRequests(20);
+                setRequests(data.requests);
             } catch (err: any) {
                 // Establece un mensaje de error si la obtención de datos falla.
                 setError('Error al cargar el historial de solicitudes.');

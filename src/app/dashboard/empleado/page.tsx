@@ -339,6 +339,7 @@ export default function EmpleadoPage() {
                   <TableRow>
                     <TableHead>Activo</TableHead>
                     <TableHead>Serial</TableHead>
+                    <TableHead>F. Solicitud</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
@@ -349,6 +350,7 @@ export default function EmpleadoPage() {
                       <TableRow key={asset.id}>
                         <TableCell>{asset.name}</TableCell>
                         <TableCell>{asset.serial || 'N/A'}</TableCell>
+                        <TableCell>{formatFirebaseTimestamp(asset.requestDate) || 'N/A'}</TableCell>
                         <TableCell>
                           {pendingReplacementAssetIds.has(asset.id) ? (
                             <Badge variant="destructive">Reemplazo Solicitado</Badge>
@@ -368,7 +370,7 @@ export default function EmpleadoPage() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center">No tiene activos asignados.</TableCell>
+                      <TableCell colSpan={5} className="text-center">No tiene activos asignados.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>

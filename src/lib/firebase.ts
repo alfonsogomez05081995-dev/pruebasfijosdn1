@@ -4,13 +4,13 @@
  * @see https://firebase.google.com/docs/web/setup
  */
 
-// Import the functions you need from the SDKs you need
+// Importa las funciones que necesitas de los SDKs que necesitas
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getAuth } from "firebase/auth"; // Import getAuth
+import { getAuth } from "firebase/auth"; // Importa getAuth
 
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// Para el SDK de JS de Firebase v7.20.0 y posteriores, measurementId es opcional
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -21,10 +21,10 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase
+// Inicializa Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const storage = getStorage(app);
-const auth = getAuth(app); // Initialize auth
+const auth = getAuth(app); // Inicializa la autenticación
 
-export { app, db, storage, auth }; // Export auth
+export { app, db, storage, auth }; // Exporta la autenticación

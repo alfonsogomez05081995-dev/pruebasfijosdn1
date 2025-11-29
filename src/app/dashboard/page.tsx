@@ -52,12 +52,6 @@ export default function Dashboard() {
   // Obtiene el objeto router para la navegación.
   const router = useRouter();
 
-  // Efecto para depuración: muestra el ID del proyecto de Firebase.
-  useEffect(() => {
-    // DEBUG: Log the project ID to verify environment variables are loaded.
-    console.log("DEBUG: Project ID from env is:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
-  }, []);
-
   // Efecto que redirige al inicio si el usuario no está autenticado.
   useEffect(() => {
     if (auth && !auth.loading && !auth.currentUser) {

@@ -52,6 +52,7 @@ import {
     AssetHistoryEvent,
     Asset,
     getAssetById,
+    getAssetByRequestId,
     getAvailableSerials,
     getDevolutionProcesses // Import the function to get pending processes
 } from "@/lib/services";
@@ -389,6 +390,27 @@ setShowRejectionModal(true);
     }
   };
 
+  // Función para mostrar el historial inteligente basado en la solicitud.
+  // Intenta encontrar el activo asignado (hijo) primero para ver eventos de recepción.
+  const handleShowHistoryForRequest = async (request: AssignmentRequest) => {
+    try {
+      // Intentar buscar el activo específico vinculado a esta solicitud (el que tiene el empleado)
+      const assignedAsset = await getAssetByRequestId(request.id);
+      
+      if (assignedAsset) {
+        // Si encontramos el activo asignado, mostramos su historial (incluye recepción)
+        await handleShowHistory(assignedAsset.id);
+      } else {
+        // Si no (ej. aún no enviado o es antiguo), mostramos el del activo original (Stock)
+        await handleShowHistory(request.assetId);
+      }
+    } catch (error) {
+      console.error("Error finding asset for request:", error);
+      // Fallback seguro al activo original
+      await handleShowHistory(request.assetId);
+    }
+  };
+
   const handleGeneratePazYSalvo = async (process: DevolutionProcess) => {
     toast({ title: 'Generando PDF...', description: 'Por favor espere.' });
     try {
@@ -643,7 +665,7 @@ setShowRejectionModal(true);
                       <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
                       <TableCell>{req.carrier || 'N/A'}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="outline" size="sm" onClick={() => handleShowHistory(req.assetId)}>
+                        <Button variant="outline" size="sm" onClick={() => handleShowHistoryForRequest(req)}>
                             <History className="h-4 w-4 mr-2" />
                             Ver Historial
                         </Button>

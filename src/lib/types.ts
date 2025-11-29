@@ -40,10 +40,11 @@ export interface Asset {
   assignedTo?: { employeeName: string; quantity: number; serial?: string }[]; // Para agrupar asignaciones.
   totalStock?: number; // Para mostrar el stock consolidado.
   history?: AssetHistoryEvent[]; // Historial de eventos del activo.
+  requestDate?: Timestamp; // Fecha en que el Master solicitó la asignación.
 }
 
 // Define los posibles estados de una solicitud de asignación.
-export type AssignmentStatus = 'pendiente de envío' | 'enviado' | 'pendiente por stock' | 'rechazado' | 'archivado';
+export type AssignmentStatus = 'pendiente de envío' | 'enviado' | 'pendiente por stock' | 'rechazado' | 'archivado' | 'recibido a conformidad';
 // Define la estructura de una solicitud de asignación.
 export interface AssignmentRequest {
   id: string; // ID del documento en Firestore.
