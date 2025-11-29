@@ -15,8 +15,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CreditCard, LogOut, User } from "lucide-react";
-import { useAuth } from '@/contexts/AuthContext'; // Hook para acceder al contexto de autenticación.
+import { CreditCard, LogOut, User, FileDown } from "lucide-react";
+import { useAuth } from '@/contexts/AuthContext';
+import { getCompletedDevolutionForEmployee, getAssetById } from "@/lib/services";
+import { generatePazYSalvoPDF } from "@/lib/pdfGenerator";
+import { useToast } from "@/hooks/use-toast";
 
 // Define el componente funcional UserNav.
 export function UserNav() {
@@ -24,6 +27,7 @@ export function UserNav() {
   const auth = useAuth();
   // Hook de Next.js para la navegación programática.
   const router = useRouter();
+  const { toast } = useToast();
 
   // Si el contexto de autenticación no está disponible o no hay datos de usuario, no renderiza nada.
   if (!auth || !auth.userData) {
@@ -43,6 +47,46 @@ export function UserNav() {
     } catch (error) {
       // Muestra un error en la consola si el cierre de sesión falla.
       console.error("Failed to log out:", error);
+    }
+  };
+  
+  // Función para manejar la descarga del Paz y Salvo desde el menú.
+  const handleDownloadCertificate = async () => {
+    if (userData.role !== 'empleado') return;
+
+    toast({ title: "Verificando estado...", description: "Buscando su certificado de Paz y Salvo." });
+    try {
+        const process = await getCompletedDevolutionForEmployee(userData.id);
+        
+        if (!process) {
+            toast({ variant: "default", title: "No disponible", description: "Aún no tiene un proceso de Paz y Salvo completado." });
+            router.push('/dashboard/empleado'); // Redirigir al dashboard para que vea el estado
+            return;
+        }
+
+        toast({ title: "Generando PDF...", description: "Por favor espere." });
+        
+        const assetsWithStatus = await Promise.all(
+            process.assets.map(async (assetInProcess) => {
+              const assetDoc = await getAssetById(assetInProcess.id);
+              let finalStatus = 'Retornado a Stock';
+              if (assetDoc && assetDoc.status === 'baja') {
+                 finalStatus = 'Dado de Baja';
+              }
+              return {
+                name: assetInProcess.name,
+                serial: assetInProcess.serial,
+                finalStatus: finalStatus,
+              };
+            })
+        );
+
+        generatePazYSalvoPDF(process, assetsWithStatus);
+        toast({ title: "Descarga iniciada", description: "Su certificado se está descargando." });
+
+    } catch (error) {
+        console.error("Error downloading certificate:", error);
+        toast({ variant: "destructive", title: "Error", description: "Ocurrió un error al intentar descargar el certificado." });
     }
   };
 
@@ -83,10 +127,12 @@ export function UserNav() {
             <User className="mr-2 h-4 w-4" />
             <span>Perfil</span>
           </DropdownMenuItem>
-          <DropdownMenuItem>
-            <CreditCard className="mr-2 h-4 w-4" />
-            <span>Paz y Salvo</span>
-          </DropdownMenuItem>
+          {userData.role === 'empleado' && (
+            <DropdownMenuItem onClick={handleDownloadCertificate}>
+                <FileDown className="mr-2 h-4 w-4" />
+                <span>Paz y Salvo</span>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         {/* Ítem para cerrar sesión, con un manejador de clic. */}

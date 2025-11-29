@@ -14,7 +14,7 @@ export interface User {
   email: string; // Correo electrónico del usuario.
   role: Role; // Rol del usuario.
   status: 'invitado' | 'activo'; // Estado de la cuenta del usuario.
-  devolutionPazYSalvoStatus?: 'pending' | 'completed' | 'not_applicable'; // Estado del paz y salvo de devolución del empleado.
+  devolutionPazYSalvoStatus?: 'pending' | 'completed' | 'acknowledged' | 'not_applicable'; // Estado del paz y salvo de devolución del empleado.
 }
 
 // Define los posibles estados de un activo.

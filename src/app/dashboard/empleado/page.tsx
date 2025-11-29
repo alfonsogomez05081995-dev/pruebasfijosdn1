@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, RefreshCw, Undo2, AlertTriangle, XCircle, PackageCheck, PackageX } from "lucide-react";
+import { CheckCircle, RefreshCw, Undo2, AlertTriangle, XCircle, PackageCheck, PackageX, FileDown, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -43,9 +43,13 @@ import {
   initiateDevolutionProcess,
   submitReplacementRequest,
   getPendingReplacementRequestsForEmployee,
+  getCompletedDevolutionForEmployee, // Nuevo
+  acknowledgePazYSalvo, // Nuevo
+  getAssetById, // Nuevo
 } from "@/lib/services";
-import { Asset, ReplacementRequest, AssetHistoryEvent } from "@/lib/types";
+import { Asset, ReplacementRequest, AssetHistoryEvent, DevolutionProcess } from "@/lib/types";
 import { formatFirebaseTimestamp } from "@/lib/utils";
+import { generatePazYSalvoPDF } from "@/lib/pdfGenerator"; // Nuevo
 // Importaciones de componentes de diálogo de alerta y selección.
 import {
   AlertDialog,
@@ -229,6 +233,58 @@ export default function EmpleadoPage() {
     }
   };
 
+  // Maneja la descarga del certificado de Paz y Salvo.
+  const handleDownloadCertificate = async () => {
+    if (!userData) return;
+    toast({ title: "Generando certificado...", description: "Por favor espere un momento." });
+    try {
+      // 1. Obtener el proceso de devolución completado
+      const process = await getCompletedDevolutionForEmployee(userData.id);
+      if (!process) {
+        throw new Error("No se encontró el registro de devolución completado.");
+      }
+
+      // 2. Obtener detalles finales de los activos (estado final)
+      const assetsWithStatus = await Promise.all(
+        process.assets.map(async (assetInProcess) => {
+          const assetDoc = await getAssetById(assetInProcess.id);
+          // Si el activo ya no existe (fue borrado) o cambió, usamos info básica.
+          // Generalmente 'baja' o 'en stock' son los estados finales.
+          let finalStatus = 'Retornado a Stock';
+          if (assetDoc && assetDoc.status === 'baja') {
+             finalStatus = 'Dado de Baja';
+          }
+          return {
+            name: assetInProcess.name,
+            serial: assetInProcess.serial,
+            finalStatus: finalStatus,
+          };
+        })
+      );
+
+      // 3. Generar PDF
+      generatePazYSalvoPDF(process, assetsWithStatus);
+      toast({ title: "Descarga iniciada", description: "Su certificado se está descargando." });
+
+    } catch (error: any) {
+      console.error("Error generating PDF:", error);
+      toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo generar el certificado." });
+    }
+  };
+
+  // Maneja el cierre (reconocimiento) de la notificación de Paz y Salvo.
+  const handleDismissCertificate = async () => {
+    if (!userData) return;
+    try {
+      await acknowledgePazYSalvo(userData.id);
+      // Actualizamos localmente los datos o recargamos la página para que desaparezca el banner
+      window.location.reload(); 
+    } catch (error) {
+      console.error("Error dismissing notification:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el estado." });
+    }
+  };
+
   // Filtra los activos según su estado.
   const pendingAssets = assignedAssets.filter(asset => asset.status === 'recibido pendiente');
   const myAssets = assignedAssets.filter(asset => 
@@ -248,15 +304,24 @@ export default function EmpleadoPage() {
       
       {/* Card para el Estado de Paz y Salvo */}
       {userData.devolutionPazYSalvoStatus === 'completed' && (
-        <Card className="mb-6 bg-green-50 border-green-200">
-          <CardHeader className="flex-row items-center gap-4">
-            <CheckCircle className="h-8 w-8 text-green-600" />
-            <div>
-              <CardTitle className="text-green-800">Paz y Salvo: Completado</CardTitle>
-              <CardDescription className="text-green-700">
-                Su proceso de devolución de activos ha sido completado exitosamente.
-              </CardDescription>
+        <Card className="mb-6 bg-green-50 border-green-200 relative">
+          <CardHeader className="flex-row items-start justify-between gap-4">
+            <div className="flex flex-row items-center gap-4">
+              <CheckCircle className="h-8 w-8 text-green-600" />
+              <div>
+                <CardTitle className="text-green-800">Paz y Salvo: Completado</CardTitle>
+                <CardDescription className="text-green-700 mb-2">
+                  Su proceso de devolución ha finalizado exitosamente. Puede descargar su certificado.
+                </CardDescription>
+                <Button size="sm" variant="outline" className="bg-white hover:bg-green-100 text-green-700 border-green-300" onClick={handleDownloadCertificate}>
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Descargar Certificado
+                </Button>
+              </div>
             </div>
+            <Button variant="ghost" size="icon" className="text-green-700 hover:text-green-900 hover:bg-green-100 -mt-2 -mr-2" onClick={handleDismissCertificate} title="Cerrar y no volver a mostrar">
+                <X className="h-5 w-5" />
+            </Button>
           </CardHeader>
         </Card>
       )}

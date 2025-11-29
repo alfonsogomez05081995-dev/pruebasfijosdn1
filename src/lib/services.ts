@@ -1408,6 +1408,41 @@ export const initiateDevolutionProcess = async (employeeId: string, employeeName
     await batch.commit();
 };
 
+/**
+ * Obtiene el último proceso de devolución completado para un empleado.
+ * @param employeeId - El ID del empleado.
+ * @returns El proceso de devolución o null si no existe.
+ */
+export const getCompletedDevolutionForEmployee = async (employeeId: string): Promise<DevolutionProcess | null> => {
+  const q = query(
+    collection(db, "devolutionProcesses"),
+    where("employeeId", "==", employeeId),
+    where("status", "==", "completado"),
+    orderBy("date", "desc"),
+    limit(1)
+  );
+  const querySnapshot = await getDocs(q);
+  if (querySnapshot.empty) return null;
+  
+  const doc = querySnapshot.docs[0];
+  const data = doc.data() as DevolutionProcess;
+  return {
+    ...data,
+    id: doc.id,
+    formattedDate: formatFirebaseTimestamp(data.date),
+  };
+};
+
+/**
+ * Marca el proceso de paz y salvo como reconocido/descargado por el empleado.
+ * Esto ocultará la notificación en el dashboard.
+ * @param userId - El ID del usuario.
+ */
+export const acknowledgePazYSalvo = async (userId: string): Promise<void> => {
+  const userRef = doc(db, "users", userId);
+  await updateDoc(userRef, { devolutionPazYSalvoStatus: 'acknowledged' });
+};
+
 
 
 // ------------------- SERVICIOS DE HISTORIAL -------------------
