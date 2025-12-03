@@ -52,9 +52,10 @@ const addAssetHistoryEvent = (
  * @param email - El correo electrónico del usuario a invitar.
  * @param role - El rol asignado al usuario.
  * @param inviterId - El ID del usuario que realiza la invitación.
+ * @param corporateId - El ID Corporativo o Cédula del usuario (Obligatorio para control de inventario).
  * @throws Si el correo electrónico ya está registrado o ya ha sido invitado.
  */
-export const inviteUser = async (email: string, role: Role, inviterId: string): Promise<void> => {
+export const inviteUser = async (email: string, role: Role, inviterId: string, corporateId: string): Promise<void> => {
   const lowerCaseEmail = email.toLowerCase();
 
   // 1. Verificar si el usuario ya existe en la colección principal de usuarios
@@ -71,10 +72,14 @@ export const inviteUser = async (email: string, role: Role, inviterId: string): 
     throw new Error(`El correo '${lowerCaseEmail}' ya ha sido invitado.`);
   }
 
-  // 3. Crear el documento de invitación con el correo electrónico como ID
+  // 3. Verificar si el Corporate ID ya está en uso (Opcional pero recomendado para integridad)
+  // Nota: Esto requeriría un índice en 'invitations' o 'users'. Por ahora lo guardamos directo.
+  
+  // 4. Crear el documento de invitación
   await setDoc(invitationRef, {
     role: role,
     invitedBy: inviterId,
+    corporateId: corporateId, // Guardamos el ID para usarlo en el registro
     createdAt: Timestamp.now(),
   });
 };
@@ -105,9 +110,9 @@ export const getUsers = async (roleFilter?: Role, inviterId?: string): Promise<U
 /**
  * Actualiza los datos de un usuario específico.
  * @param userId - El ID del usuario a actualizar.
- * @param updates - Un objeto con los campos a actualizar (nombre o rol).
+ * @param updates - Un objeto con los campos a actualizar (nombre, rol o corporateId).
  */
-export const updateUser = async (userId: string, updates: Partial<Pick<User, 'name' | 'role'>>): Promise<void> => {
+export const updateUser = async (userId: string, updates: Partial<Pick<User, 'name' | 'role' | 'corporateId'>>): Promise<void> => {
   await updateDoc(doc(db, "users", userId), updates);
 };
 

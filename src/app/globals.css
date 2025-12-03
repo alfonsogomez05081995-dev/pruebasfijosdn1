@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    /* --- VALORES ORIGINALES (Restaurados para el Login) --- */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -29,8 +30,17 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
+
+    /* Definición de la paleta nueva (disponible pero no aplicada globalmente) */
+    --brand-light: 210 14% 95%; 
+    --brand-purple: 278 65% 46%;
+    --brand-cherry: 341 79% 43%;
+    --brand-blue: 241 57% 48%;
+    --brand-indigo: 268 65% 29%;
   }
+
   .dark {
+    /* --- VALORES ORIGINALES DARK MODE --- */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
@@ -56,6 +66,56 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
+
+  /* --- NUEVA CAPA DE TEMA CORPORATIVO (Solo se aplicará al Dashboard) --- */
+  .corporate-theme {
+    --background: 210 14% 95%; /* --brand-light */
+    --foreground: 268 65% 29%; /* --brand-indigo */
+    
+    /* Definición EXPLÍCITA de Tarjetas y Popovers para evitar herencias rotas */
+    --card: 0 0% 100%;
+    --card-foreground: 268 65% 29%; /* Texto oscuro obligatorio */
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 268 65% 29%; /* Texto oscuro obligatorio */
+
+    --primary: 241 57% 48%; /* --brand-blue */
+    --primary-foreground: 210 14% 95%;
+    
+    --secondary: 278 65% 46%; /* --brand-purple */
+    --secondary-foreground: 210 14% 95%;
+    
+    --muted: 241 20% 90%;
+    --muted-foreground: 241 40% 60%;
+    
+    --accent: 341 79% 43%; /* --brand-cherry */
+    --accent-foreground: 210 14% 95%;
+    
+    --destructive: 341 79% 43%;
+    --destructive-foreground: 210 14% 95%;
+    
+    --border: 241 20% 85%;
+    --input: 241 20% 85%;
+    --ring: 278 65% 46%;
+    
+    --radius: 0.75rem;
+  }
+
+  /* Variaciones de Tema Específicas (heredan de corporate-theme) */
+  .theme-master {
+    --primary: 341 79% 43%; /* Cherry principal */
+    --ring: 341 79% 43%;
+  }
+  
+  .theme-logistica {
+    --primary: 241 57% 48%; /* Blue principal */
+    --ring: 241 57% 48%;
+  }
+  
+  .theme-empleado {
+    --primary: 278 65% 46%; /* Purple principal */
+    --ring: 278 65% 46%;
+  }
 }
 
 @layer base {
@@ -65,5 +125,45 @@
   body {
     @apply text-foreground;
     background: transparent;
+  }
+}
+
+@layer utilities {
+  /* FONDOS DEGRADADOS (Sin cambios) */
+  .bg-gradient-master {
+    background: radial-gradient(circle at center, 
+      #471a7a 0%, 
+      #3935c0 40%, 
+      #c5164d 100%);
+    background-attachment: fixed;
+  }
+
+  .bg-gradient-logistica {
+    background: linear-gradient(135deg, 
+      #3935c0 0%, 
+      #471a7a 50%, 
+      #8a29c2 100%);
+    background-attachment: fixed;
+  }
+
+  .bg-gradient-empleado {
+    background: linear-gradient(0.25turn, 
+      #8a29c2, 
+      #c5164d, 
+      #3935c0);
+    background-attachment: fixed;
+  }
+  
+  .bg-gradient-full {
+    background: linear-gradient(0.25turn, #eff1f5, #8a29c2, #c5164d, #3935c0, #471a7a);
+    background-attachment: fixed;
+  }
+
+  .glass-panel {
+    @apply bg-white/90 dark:bg-black/80 backdrop-blur-md border border-white/20 shadow-xl;
+  }
+  
+  .glass-sidebar {
+    @apply bg-white/80 dark:bg-[#471a7a]/90 backdrop-blur-lg border-r border-white/10;
   }
 }

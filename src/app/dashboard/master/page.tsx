@@ -116,6 +116,7 @@ export default function MasterPage() {
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState<Role | ''| undefined>('');
+  const [newUserCorporateId, setNewUserCorporateId] = useState(''); // Nuevo estado para almacenar la Cédula o ID Corporativo
 
   // Efecto para redirigir al usuario si no tiene el rol de master.
   useEffect(() => {
@@ -175,7 +176,7 @@ export default function MasterPage() {
         }));
       setAssetHistory(sortedHistory);
       setHistoryDialogOpen(true);
-    } catch (error) {
+    } catch (error: any) { 
       console.error("Error fetching asset history:", error);
       toast({ variant: "destructive", title: "Error", description: "No se pudo cargar el historial del activo." });
     }
@@ -190,7 +191,7 @@ export default function MasterPage() {
         return;
       }
       handleShowHistory(asset.id);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching asset by request ID:", error);
       toast({ variant: "destructive", title: "Error", description: "No se pudo cargar el historial para esta solicitud." });
     }
@@ -305,16 +306,17 @@ export default function MasterPage() {
   // Maneja el envío del formulario para invitar a un usuario.
   const handleInviteUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!newUserEmail || !newUserRole) {
-      toast({ variant: "destructive", title: "Error", description: "Correo y Rol son requeridos." });
+    if (!newUserEmail || !newUserRole || !newUserCorporateId) {
+      toast({ variant: "destructive", title: "Error", description: "Correo, Rol y Cédula son requeridos." });
       return;
     }
     try {
-      await inviteUser(newUserEmail, newUserRole, userData.id);
+      await inviteUser(newUserEmail, newUserRole, userData.id, newUserCorporateId);
       toast({ title: "Usuario Invitado", description: `Se ha enviado una invitación a ${newUserEmail}.` });
       setUserDialogOpen(false);
       setNewUserEmail('');
       setNewUserRole('');
+      setNewUserCorporateId(''); // Limpiar campo
       await fetchAllData();
     } catch (error: any) {
       console.error("Error invitando usuario:", error);
@@ -328,18 +330,23 @@ export default function MasterPage() {
     setNewUserName(userToEdit.name);
     setNewUserEmail(userToEdit.email);
     setNewUserRole(userToEdit.role);
+    setNewUserCorporateId(userToEdit.corporateId || ''); // Cargar ID existente
     setEditUserDialogOpen(true);
   }
 
   // Maneja el envío del formulario para actualizar un usuario.
   const handleUpdateUserSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!currentUserForAction || !newUserName || !newUserRole) {
-        toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el usuario. Faltan datos." });
+    if (!currentUserForAction || !newUserName || !newUserRole || !newUserCorporateId) {
+        toast({ variant: "destructive", title: "Error", description: "Todos los campos son requeridos." });
         return;
     }
     try {
-        await updateUser(currentUserForAction.id, { name: newUserName, role: newUserRole });
+        await updateUser(currentUserForAction.id, { 
+          name: newUserName, 
+          role: newUserRole,
+          corporateId: newUserCorporateId // Actualizar ID
+        });
         toast({ title: "Usuario Actualizado", description: `Los datos de ${newUserName} han sido actualizados.` });
         setEditUserDialogOpen(false);
         setCurrentUserForAction(null);
@@ -397,7 +404,7 @@ export default function MasterPage() {
             )}
         </TabsList>
 
-        <TabsContent value="assignments">
+        <TabsContent value="assignments" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Crear Nueva Asignación Múltiple</CardTitle>
@@ -490,7 +497,7 @@ export default function MasterPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="requests">
+        <TabsContent value="requests" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Autorizar Reposición de Activos</CardTitle>
@@ -499,55 +506,57 @@ export default function MasterPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Empleado</TableHead>
-                    <TableHead>Activo</TableHead>
-                    <TableHead>Motivo</TableHead>
-                    <TableHead>Justificación (Texto)</TableHead>
-                    <TableHead>Imagen</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {replacementRequests.map((request) => (
-                    <TableRow key={request.id}>
-                      <TableCell>{request.employeeName}</TableCell>
-                      <TableCell>{request.assetName} ({request.serial})</TableCell>
-                      <TableCell>{request.reason}</TableCell>
-                      <TableCell className="max-w-[200px] truncate" title={request.justification || 'No registrada'}>
-                        {request.justification || 'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        {request.imageUrl && (
-                          <button onClick={() => setImageToPreview(request.imageUrl || null)} className="w-16 h-16 relative border rounded-md overflow-hidden">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={request.imageUrl} alt="Thumbnail de evidencia" className="w-full h-full object-cover" />
-                          </button>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApproveRequest(request.id!)}>
-                            <Check className="h-4 w-4 text-green-500" />
-                            <span className="sr-only">Aprobar</span>
-                          </Button>
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleOpenRejectionDialog(request)}>
-                            <X className="h-4 w-4 text-red-500" />
-                            <span className="sr-only">Rechazar</span>
-                          </Button>
-                        </div>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Empleado</TableHead>
+                      <TableHead>Activo</TableHead>
+                      <TableHead>Motivo</TableHead>
+                      <TableHead>Justificación (Texto)</TableHead>
+                      <TableHead>Imagen</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {replacementRequests.map((request) => (
+                      <TableRow key={request.id}>
+                        <TableCell>{request.employeeName}</TableCell>
+                        <TableCell>{request.assetName} ({request.serial})</TableCell>
+                        <TableCell>{request.reason}</TableCell>
+                        <TableCell className="max-w-[200px] truncate" title={request.justification || 'No registrada'}>
+                          {request.justification || 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          {request.imageUrl && (
+                            <button onClick={() => setImageToPreview(request.imageUrl || null)} className="w-16 h-16 relative border rounded-md overflow-hidden">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={request.imageUrl} alt="Thumbnail de evidencia" className="w-full h-full object-cover" />
+                            </button>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex gap-2 justify-end">
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleApproveRequest(request.id!)}>
+                              <Check className="h-4 w-4 text-green-500" />
+                              <span className="sr-only">Aprobar</span>
+                            </Button>
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleOpenRejectionDialog(request)}>
+                              <X className="h-4 w-4 text-red-500" />
+                              <span className="sr-only">Rechazar</span>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="devolutions">
+        <TabsContent value="devolutions" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Procesos de Devolución</CardTitle>
@@ -556,43 +565,45 @@ export default function MasterPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Empleado</TableHead>
-                    <TableHead>Fecha de Inicio</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Activos en Proceso</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {devolutionProcesses.length > 0 ? devolutionProcesses.map((process) => (
-                    <TableRow key={process.id}>
-                      <TableCell>{process.employeeName}</TableCell>
-                      <TableCell>{process.formattedDate}</TableCell>
-                      <TableCell>
-                        <Badge variant={process.status === 'completado' ? 'default' : 'secondary'}>{process.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          {process.assets.map(a => (
-                            <Button key={a.id} variant="link" className="h-auto p-0 justify-start" onClick={() => handleShowHistory(a.id)}>
-                              {a.name} ({a.serial})
-                            </Button>
-                          ))}
-                        </div>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Empleado</TableHead>
+                      <TableHead>Fecha de Inicio</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Activos en Proceso</TableHead>
                     </TableRow>
-                  )) : (
-                    <TableRow><TableCell colSpan={4} className="text-center">No hay procesos de devolución.</TableCell></TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {devolutionProcesses.length > 0 ? devolutionProcesses.map((process) => (
+                      <TableRow key={process.id}>
+                        <TableCell>{process.employeeName}</TableCell>
+                        <TableCell>{process.formattedDate}</TableCell>
+                        <TableCell>
+                          <Badge variant={process.status === 'completado' ? 'default' : 'secondary'}>{process.status}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            {process.assets.map(a => (
+                              <Button key={a.id} variant="link" className="h-auto p-0 justify-start" onClick={() => handleShowHistory(a.id)}>
+                                {a.name} ({a.serial})
+                              </Button>
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )) : (
+                      <TableRow><TableCell colSpan={4} className="text-center">No hay procesos de devolución.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="users">
+        <TabsContent value="users" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -613,13 +624,17 @@ export default function MasterPage() {
                     <DialogHeader>
                       <DialogTitle>Invitar Nuevo Usuario</DialogTitle>
                       <DialogDescription>
-                        Ingrese el correo y asigne un rol para invitar a un nuevo usuario al sistema.
+                        Ingrese los datos para invitar a un nuevo usuario.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                       <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="corp-id" className="text-right">Cédula / ID</Label>
+                        <Input id="corp-id" className="col-span-3" required value={newUserCorporateId} onChange={(e) => setNewUserCorporateId(e.target.value)} placeholder="Ej: 10203040" />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="email" className="text-right">Correo</Label>
-                        <Input id="email" name="email" type="email" className="col-span-3" required value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
+                        <Input id="email" name="email" type="email" className="col-span-3" required value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} placeholder="usuario@empresa.com" />
                       </div>
                       <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="role" className="text-right">Rol</Label>
@@ -646,48 +661,52 @@ export default function MasterPage() {
               </Dialog>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Correo</TableHead>
-                    <TableHead>Rol</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {allUsers.map((u) => (
-                    <TableRow key={u.id}>
-                      <TableCell>{u.name}</TableCell>
-                      <TableCell>{u.email}</TableCell>
-                      <TableCell>
-                        <Badge variant={u.role.startsWith('master') ? 'default' : 'secondary'}>{u.role}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={u.status === 'activo' ? 'default' : 'outline'}>{u.status}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleEditUserClick(u)}>
-                            <FilePenLine className="h-4 w-4" />
-                            <span className="sr-only">Editar</span>
-                          </Button>
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleDeleteUserClick(u)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                            <span className="sr-only">Eliminar</span>
-                          </Button>
-                        </div>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>ID Corp</TableHead>
+                      <TableHead>Correo</TableHead>
+                      <TableHead>Rol</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {allUsers.map((u) => (
+                      <TableRow key={u.id}>
+                        <TableCell>{u.name}</TableCell>
+                        <TableCell className="font-mono text-xs">{u.corporateId || 'N/A'}</TableCell>
+                        <TableCell>{u.email}</TableCell>
+                        <TableCell>
+                          <Badge variant={u.role.startsWith('master') ? 'default' : 'secondary'}>{u.role}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={u.status === 'activo' ? 'default' : 'outline'}>{u.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex gap-2 justify-end">
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleEditUserClick(u)}>
+                              <FilePenLine className="h-4 w-4" />
+                              <span className="sr-only">Editar</span>
+                            </Button>
+                            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleDeleteUserClick(u)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                              <span className="sr-only">Eliminar</span>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="history">
+        <TabsContent value="history" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Historial de Asignaciones</CardTitle>
@@ -696,47 +715,49 @@ export default function MasterPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Empleado</TableHead>
-                    <TableHead>Activo</TableHead>
-                    <TableHead className="hidden md:table-cell">Cantidad</TableHead>
-                    <TableHead className="hidden lg:table-cell">Tipo</TableHead>
-                    <TableHead>Justificación</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Guía</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {assignmentHistory.length > 0 ? assignmentHistory.map((req) => (
-                    <TableRow key={req.id}>
-                      <TableCell>{req.date ? new Date(req.date.seconds * 1000).toLocaleDateString() : 'N/A'}</TableCell>
-                      <TableCell>{req.employeeName}</TableCell>
-                      <TableCell>
-                        <Button variant="link" className="h-auto p-0" onClick={() => handleShowHistoryForRequest(req.id)}>
-                          {req.assetName}
-                          <ExternalLink className="h-3 w-3 ml-1" />
-                        </Button>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">{req.quantity}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{req.assignmentType === 'primera_vez' ? 'Primera Vez' : req.assignmentType === 'reposicion' ? 'Reposición' : 'N/A'}</TableCell>
-                      <TableCell className="max-w-[150px] truncate" title={req.justification || 'No registrada'}>{req.justification || 'N/A'}</TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          req.status === 'recibido a conformidad' ? 'default' :
-                          req.status === 'enviado' ? 'secondary' : 
-                          req.status === 'rechazado' ? 'destructive' : 'outline'
-                        }>{req.status}</Badge>
-                      </TableCell>
-                      <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Empleado</TableHead>
+                      <TableHead>Activo</TableHead>
+                      <TableHead className="hidden md:table-cell">Cantidad</TableHead>
+                      <TableHead className="hidden lg:table-cell">Tipo</TableHead>
+                      <TableHead>Justificación</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Guía</TableHead>
                     </TableRow>
-                  )) : (
-                    <TableRow><TableCell colSpan={8} className="text-center">No hay historial de asignaciones.</TableCell></TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {assignmentHistory.length > 0 ? assignmentHistory.map((req) => (
+                      <TableRow key={req.id}>
+                        <TableCell>{req.date ? new Date(req.date.seconds * 1000).toLocaleDateString() : 'N/A'}</TableCell>
+                        <TableCell>{req.employeeName}</TableCell>
+                        <TableCell>
+                          <Button variant="link" className="h-auto p-0" onClick={() => handleShowHistoryForRequest(req.id)}>
+                            {req.assetName}
+                            <ExternalLink className="h-3 w-3 ml-1" />
+                          </Button>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">{req.quantity}</TableCell>
+                        <TableCell className="hidden lg:table-cell">{req.assignmentType === 'primera_vez' ? 'Primera Vez' : req.assignmentType === 'reposicion' ? 'Reposición' : 'N/A'}</TableCell>
+                        <TableCell className="max-w-[150px] truncate" title={req.justification || 'No registrada'}>{req.justification || 'N/A'}</TableCell>
+                        <TableCell>
+                          <Badge variant={
+                            req.status === 'recibido a conformidad' ? 'default' :
+                            req.status === 'enviado' ? 'secondary' : 
+                            req.status === 'rechazado' ? 'destructive' : 'outline'
+                          }>{req.status}</Badge>
+                        </TableCell>
+                        <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
+                      </TableRow>
+                    )) : (
+                      <TableRow><TableCell colSpan={8} className="text-center">No hay historial de asignaciones.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -761,7 +782,7 @@ export default function MasterPage() {
         <ImagePreviewModal imageUrl={imageToPreview} onClose={() => setImageToPreview(null)} />
       )}
 
-      {/* Diálogo para Editar Usuario */}
+      {/* Diálogo para Editar Usuario (Actualizado) */}
       <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
           <DialogContent>
               <form onSubmit={handleUpdateUserSubmit}>
@@ -775,6 +796,10 @@ export default function MasterPage() {
                       <div className="grid grid-cols-4 items-center gap-4">
                           <Label htmlFor="email-edit" className="text-right">Correo</Label>
                           <Input id="email-edit" name="email" type="email" className="col-span-3" disabled value={currentUserForAction?.email || ''} />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                          <Label htmlFor="corp-id-edit" className="text-right">Cédula / ID</Label>
+                          <Input id="corp-id-edit" className="col-span-3" required value={newUserCorporateId} onChange={(e) => setNewUserCorporateId(e.target.value)} />
                       </div>
                       <div className="grid grid-cols-4 items-center gap-4">
                           <Label htmlFor="name-edit" className="text-right">Nombre</Label>

@@ -10,6 +10,7 @@ export type Role = 'master' | 'master_it' | 'master_campo' | 'master_depot' | 'l
 export interface User {
   id: string; // ID del documento en Firestore.
   uid?: string; // UID de Firebase Authentication.
+  corporateId?: string; // ID Corporativo o Cédula (Nuevo Campo).
   name: string; // Nombre del usuario.
   email: string; // Correo electrónico del usuario.
   role: Role; // Rol del usuario.

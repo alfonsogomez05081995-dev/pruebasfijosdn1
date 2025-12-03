@@ -1,25 +1,22 @@
 'use client';
 
-// Importa el componente Link de Next.js para la navegación entre páginas.
 import Link from "next/link";
-// Importa iconos de la biblioteca lucide-react para usarlos en la interfaz.
+import { usePathname } from "next/navigation";
 import {
   Home,
   Package,
   Users,
   Wrench,
   PanelLeft,
-  Warehouse, // Añadido para Inventario
+  Warehouse,
 } from "lucide-react";
-// Importa componentes de UI personalizados.
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { UserNav } from "@/components/user-nav";
 import { Logo } from "@/components/logo";
-// Importa el hook useAuth para acceder a la información de autenticación del usuario.
-import { useAuth } from '../../contexts/AuthContext'; // Importación corregida
+import { useAuth } from '../../contexts/AuthContext'; 
+import { cn } from "@/lib/utils";
 
-// Define todos los elementos de navegación disponibles en la aplicación.
 const allNavItems = [
     { href: "/dashboard", label: "Inicio", icon: Home, roles: ['master', 'master_it', 'master_campo', 'master_depot', 'logistica', 'empleado'] },
     { href: "/dashboard/master", label: "Master", icon: Users, roles: ['master', 'master_it', 'master_campo', 'master_depot'] },
@@ -28,40 +25,56 @@ const allNavItems = [
     { href: "/dashboard/empleado", label: "Empleado", icon: Wrench, roles: ['master', 'empleado'] },
 ];
 
-// Define el componente DashboardLayout que envuelve el contenido de las páginas del dashboard.
 export default function DashboardLayout({
-  children, // Prop que recibe el contenido a renderizar dentro del layout.
+  children, 
 }: {
   children: React.ReactNode;
 }) {
-  // Obtiene el estado de autenticación usando el hook useAuth.
   const auth = useAuth(); 
+  const pathname = usePathname(); 
 
-  // Filtra los elementos de navegación para mostrar solo aquellos permitidos para el rol del usuario actual.
+  // Lógica actualizada para seleccionar la clase de DEGRADADO correcta según la sección actual (ruta)
+  const getBackgroundClass = () => {
+    if (pathname?.includes('/dashboard/master')) return 'bg-gradient-master theme-master';
+    if (pathname?.includes('/dashboard/logistica')) return 'bg-gradient-logistica theme-logistica';
+    if (pathname?.includes('/dashboard/empleado')) return 'bg-gradient-empleado theme-empleado';
+    // Retorna el degradado completo por defecto para Inicio / Dashboard general
+    return 'bg-gradient-full';
+  };
+
+  const bgClass = getBackgroundClass();
+
   const navItems = allNavItems.filter(item => auth && auth.userData && auth.userData.role && item.roles.includes(auth.userData.role));
 
-  // Renderiza la estructura del layout.
   return (
-    <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">
-      {/* Barra lateral de navegación para pantallas medianas y grandes (md y lg). */}
-      <div className="hidden border-r bg-card md:block">
+    <div className={cn(
+      "grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr] transition-all duration-700 ease-in-out",
+      "corporate-theme", // <--- ACTIVAMOS EL TEMA NUEVO SOLO AQUÍ
+      bgClass 
+    )}>
+      {/* Sidebar con efecto de vidrio más limpio y bordes sutiles */}
+      <div className="hidden border-r glass-sidebar md:block">
         <div className="flex h-full max-h-screen flex-col gap-2">
-          <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
-            <Link href="/" className="flex items-center gap-2 font-semibold">
-              <Logo className="h-8 w-8" />
-              <span className="">FijosDN</span>
+          <div className="flex h-14 items-center border-b border-white/10 px-4 lg:h-[60px] lg:px-6">
+            <Link href="/" className="flex items-center gap-2 font-semibold text-foreground">
+              <Logo className="h-8 w-8 text-primary" />
+              <span className="font-bold tracking-wide">FijosDN</span>
             </Link>
           </div>
-          <div className="flex-1">
-            {/* Menú de navegación principal. */}
-            <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
+          <div className="flex-1 py-2">
+            <nav className="grid items-start px-2 text-sm font-medium lg:px-4 gap-1">
               {navItems.map((item) => (
                 <Link
                   key={item.label}
                   href={item.href}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200",
+                    pathname === item.href 
+                      ? "bg-white/90 text-primary shadow-md font-bold translate-x-1" // Item activo resaltado
+                      : "text-muted-foreground hover:bg-white/20 hover:text-foreground hover:translate-x-1"
+                  )}
                 >
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className={cn("h-4 w-4", pathname === item.href ? "text-primary" : "text-current")} />
                   {item.label}
                 </Link>
               ))}
@@ -69,22 +82,22 @@ export default function DashboardLayout({
           </div>
         </div>
       </div>
-      {/* Contenido principal y cabecera. */}
-      <div className="flex flex-col">
-        <header className="flex h-14 items-center gap-4 border-b bg-card px-4 lg:h-[60px] lg:px-6">
-          {/* Menú de navegación deslizable para pantallas pequeñas (móviles). */}
+
+      <div className="flex flex-col relative">
+        {/* Header flotante tipo vidrio */}
+        <header className="flex h-14 items-center gap-4 border-b border-white/10 bg-white/30 backdrop-blur-md px-4 lg:h-[60px] lg:px-6 sticky top-0 z-50 shadow-sm">
           <Sheet>
             <SheetTrigger asChild>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
-                className="shrink-0 md:hidden"
+                className="shrink-0 md:hidden hover:bg-white/20"
               >
                 <PanelLeft className="h-5 w-5" />
                 <span className="sr-only">Toggle navigation menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="flex flex-col">
+            <SheetContent side="left" className="flex flex-col bg-white/95 backdrop-blur-xl">
                <SheetHeader>
                 <SheetTitle>
                    <Link
@@ -101,7 +114,10 @@ export default function DashboardLayout({
                   <Link
                     key={item.label}
                     href={item.href}
-                    className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
+                    className={cn(
+                      "mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 hover:bg-muted",
+                       pathname === item.href ? "bg-muted text-primary" : "text-muted-foreground"
+                    )}
                   >
                     <item.icon className="h-5 w-5" />
                     {item.label}
@@ -111,14 +127,16 @@ export default function DashboardLayout({
             </SheetContent>
           </Sheet>
           <div className="w-full flex-1">
-            {/* Espacio para futuras adiciones como breadcrumbs o una barra de búsqueda. */}
           </div>
-          {/* Componente que muestra la información del usuario y opciones de sesión. */}
           <UserNav />
         </header>
-        {/* Contenido principal de la página. */}
-        <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6 bg-background/80">
-          {children}
+        
+        {/* Main content area */}
+        <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-hidden">
+          {/* Panel contenedor con efecto vidrio blanco limpio para que el contenido resalte sobre el fondo colorido */}
+          <div className="glass-panel rounded-2xl h-full p-6 animate-in fade-in zoom-in-95 duration-500">
+            {children}
+          </div>
         </main>
       </div>
     </div>

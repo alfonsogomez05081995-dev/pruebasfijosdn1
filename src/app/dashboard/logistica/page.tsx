@@ -528,53 +528,55 @@ setShowRejectionModal(true);
           </div>
         </TabsContent>
 
-        <TabsContent value="assignments">
+        <TabsContent value="assignments" className="space-y-4">
           <Card className="mt-6">
             <CardHeader>
               <CardTitle>Solicitudes de Asignación</CardTitle>
               <CardDescription>Procese las solicitudes de asignación pendientes y resuelva las rechazadas.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Solicitante</TableHead>
-                    <TableHead>Activo</TableHead>
-                    <TableHead>Cantidad</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acción</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {assignmentRequests.map((req) => (
-                    <TableRow key={req.id}>
-                      <TableCell>{req.masterName}</TableCell>
-                      <TableCell>{req.assetName}</TableCell>
-                      <TableCell>{req.quantity}</TableCell>
-                      <TableCell>
-                        <Badge variant={req.status === 'pendiente de envío' ? 'secondary' : req.status === 'rechazado' ? 'destructive' : 'outline'}>{req.status}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {req.status === 'pendiente de envío' && (
-                          <Button size="sm" onClick={() => handleOpenProcessModal(req)}>
-                            <Send className="h-4 w-4 mr-2" /> Procesar Envío
-                          </Button>
-                        )}
-                        {req.status === 'rechazado' && (
-                          <Button variant="destructive" size="sm" onClick={() => handleOpenRejectionModal(req)}>
-                            <AlertTriangle className="h-4 w-4 mr-2" /> Resolver Rechazo
-                          </Button>
-                        )}
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Solicitante</TableHead>
+                      <TableHead>Activo</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acción</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {assignmentRequests.map((req) => (
+                      <TableRow key={req.id}>
+                        <TableCell>{req.masterName}</TableCell>
+                        <TableCell>{req.assetName}</TableCell>
+                        <TableCell>{req.quantity}</TableCell>
+                        <TableCell>
+                          <Badge variant={req.status === 'pendiente de envío' ? 'secondary' : req.status === 'rechazado' ? 'destructive' : 'outline'}>{req.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {req.status === 'pendiente de envío' && (
+                            <Button size="sm" onClick={() => handleOpenProcessModal(req)}>
+                              <Send className="h-4 w-4 mr-2" /> Procesar Envío
+                            </Button>
+                          )}
+                          {req.status === 'rechazado' && (
+                            <Button variant="destructive" size="sm" onClick={() => handleOpenRejectionModal(req)}>
+                              <AlertTriangle className="h-4 w-4 mr-2" /> Resolver Rechazo
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="devolutions">
+        <TabsContent value="devolutions" className="space-y-4">
           <Tabs defaultValue="ongoing" className="w-full mt-6">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="ongoing">En Curso</TabsTrigger>
@@ -590,90 +592,94 @@ setShowRejectionModal(true);
                   <CardDescription>Historial de procesos de devolución que han sido finalizados.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Empleado</TableHead>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead>Activos</TableHead>
-                        <TableHead className="text-right">Acción</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {completedProcesses.map((process) => (
-                        <TableRow key={process.id}>
-                          <TableCell>{process.employeeName}</TableCell>
-                          <TableCell>{process.formattedDate}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-2">
-                              {process.assets.map(asset => (
-                                <Button key={asset.id} variant="link" className="p-0 h-auto" onClick={() => handleShowHistory(asset.id)}>
-                                  {asset.name}
-                                </Button>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button size="sm" onClick={() => handleGeneratePazYSalvo(process)}>
-                              <FileText className="h-4 w-4 mr-2" />
-                              Generar Paz y Salvo
-                            </Button>
-                          </TableCell>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Empleado</TableHead>
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>Activos</TableHead>
+                          <TableHead className="text-right">Acción</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {completedProcesses.map((process) => (
+                          <TableRow key={process.id}>
+                            <TableCell>{process.employeeName}</TableCell>
+                            <TableCell>{process.formattedDate}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-2">
+                                {process.assets.map(asset => (
+                                  <Button key={asset.id} variant="link" className="p-0 h-auto" onClick={() => handleShowHistory(asset.id)}>
+                                    {asset.name}
+                                  </Button>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button size="sm" onClick={() => handleGeneratePazYSalvo(process)}>
+                                <FileText className="h-4 w-4 mr-2" />
+                                Generar Paz y Salvo
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
           </Tabs>
         </TabsContent>
 
-        <TabsContent value="history">
+        <TabsContent value="history" className="space-y-4">
           <Card className="mt-6">
             <CardHeader>
               <CardTitle>Historial de Solicitudes</CardTitle>
               <CardDescription>Historial completo de todas las solicitudes de asignación.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Activo</TableHead>
-                    <TableHead>Empleado</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Guía</TableHead>
-                    <TableHead>Transportadora</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {requestHistory.map((req) => (
-                    <TableRow key={req.id}>
-                      <TableCell>{req.assetName}</TableCell>
-                      <TableCell>{req.employeeName}</TableCell>
-                      <TableCell>{req.formattedDate}</TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          req.status === 'recibido a conformidad' ? 'default' :
-                          req.status === 'enviado' ? 'secondary' :
-                          req.status === 'pendiente de envío' ? 'outline' :
-                          req.status === 'rechazado' ? 'destructive' : 'outline'
-                        }>{req.status}</Badge>
-                      </TableCell>
-                      <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
-                      <TableCell>{req.carrier || 'N/A'}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="outline" size="sm" onClick={() => handleShowHistoryForRequest(req)}>
-                            <History className="h-4 w-4 mr-2" />
-                            Ver Historial
-                        </Button>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Activo</TableHead>
+                      <TableHead>Empleado</TableHead>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Guía</TableHead>
+                      <TableHead>Transportadora</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {requestHistory.map((req) => (
+                      <TableRow key={req.id}>
+                        <TableCell>{req.assetName}</TableCell>
+                        <TableCell>{req.employeeName}</TableCell>
+                        <TableCell>{req.formattedDate}</TableCell>
+                        <TableCell>
+                          <Badge variant={
+                            req.status === 'recibido a conformidad' ? 'default' :
+                            req.status === 'enviado' ? 'secondary' :
+                            req.status === 'pendiente de envío' ? 'outline' :
+                            req.status === 'rechazado' ? 'destructive' : 'outline'
+                          }>{req.status}</Badge>
+                        </TableCell>
+                        <TableCell>{req.trackingNumber || 'N/A'}</TableCell>
+                        <TableCell>{req.carrier || 'N/A'}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" onClick={() => handleShowHistoryForRequest(req)}>
+                              <History className="h-4 w-4 mr-2" />
+                              Ver Historial
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
