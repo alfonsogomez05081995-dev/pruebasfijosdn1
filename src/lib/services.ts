@@ -411,20 +411,36 @@ export const processAssignmentRequest = async (
     if (isSerializable) {
       // --- LÓGICA PARA ACTIVOS SERIALIZABLES ---
       if (!serialNumber) throw new Error("Se requiere un número de serial para este tipo de activo.");
+      
+      // Normalizar el serial para la búsqueda (eliminar espacios)
+      const cleanSerial = serialNumber.trim();
+
       if (requestData.quantity !== 1) throw new Error("No se puede asignar más de una unidad de un activo con serial.");
 
-      // Buscar el activo específico por su serial
+      // Buscar el activo específico por su serial EXACTO
       const assetWithSerialQuery = query(
         collection(db, "assets"),
-        where("serial", "==", serialNumber),
+        where("serial", "==", cleanSerial),
         where("status", "==", "en stock")
       );
+      
+      // Usamos getDocs para encontrar la referencia
       const assetWithSerialSnapshot = await getDocs(assetWithSerialQuery);
 
       if (assetWithSerialSnapshot.empty) {
-        throw new Error(`El activo con serial '${serialNumber}' no está disponible o no existe.`);
+        // ERROR CRÍTICO: Si no existe, DETENER TODO.
+        throw new Error(`VALIDACIÓN FALLIDA: El serial '${cleanSerial}' NO existe en stock o no está disponible. Verifique el inventario.`);
       }
+      
+      // Obtener la referencia del primer documento encontrado
       const stockAssetToAssignRef = assetWithSerialSnapshot.docs[0].ref;
+
+      // VALIDACIÓN DOBLE: Verificar que el activo encontrado corresponda al mismo TIPO o REFERENCIA que se pidió
+      // Esto evita que asignes un 'Mouse' con serial 123 cuando pidieron un 'Computador'
+      const foundAssetData = assetWithSerialSnapshot.docs[0].data();
+      if (foundAssetData.reference !== genericAssetDoc.data().reference && foundAssetData.tipo !== genericAssetDoc.data().tipo) {
+         throw new Error(`El serial '${cleanSerial}' pertenece a un activo (${foundAssetData.name}) diferente al solicitado.`);
+      }
 
       // Re-asignar el activo existente al empleado
       transaction.update(stockAssetToAssignRef, {
