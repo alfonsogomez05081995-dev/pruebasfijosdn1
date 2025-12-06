@@ -1,8 +1,8 @@
 # Informe de Casos de Uso: Sistema de Gestión de Activos Fijos (FijosDN)
 
-**Nombre del Autor:** [Tu Nombre]
-**Afiliación Institucional:** [Tu Institución]
-**Curso:** [Tu Curso]
+**Nombre del Autor:** [Luis Alfonso Gomez MArtinez]
+**Afiliación Institucional:** [ Sena ]
+**Curso:** [ ADSO ]
 **Nombre del Instructor:** [Nombre del Instructor]
 **Fecha:** [Fecha Actual]
 

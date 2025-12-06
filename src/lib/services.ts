@@ -399,6 +399,15 @@ export const processAssignmentRequest = async (
     if (!genericAssetDoc.exists()) throw new Error("El tipo de activo solicitado no existe.");
     const isSerializable = ['equipo_de_computo', 'herramienta_electrica'].includes(genericAssetDoc.data().tipo);
 
+    // Crear el evento histórico de la solicitud original para incluirlo en el activo
+    const originalRequestEvent: AssetHistoryEvent = {
+        timestamp: requestData.date, // Fecha original de cuando el master creó la solicitud
+        event: "Solicitud de Asignación",
+        description: `El Master ${requestData.masterName || 'Desconocido'} solicitó la asignación para ${requestData.employeeName}.`,
+        userId: requestData.masterId || null,
+        userName: requestData.masterName || 'Master'
+    };
+
     if (isSerializable) {
       // --- LÓGICA PARA ACTIVOS SERIALIZABLES ---
       if (!serialNumber) throw new Error("Se requiere un número de serial para este tipo de activo.");
@@ -427,12 +436,14 @@ export const processAssignmentRequest = async (
         requestDate: requestData.date, // Guardar fecha original de solicitud
         originalRequestId: requestId,
         originalReplacementRequestId: requestData.originalReplacementRequestId || null,
+        // Agregamos ambos eventos: la solicitud original (para que conste en este activo específico) y el envío actual
+        history: arrayUnion(originalRequestEvent)
       });
 
       addAssetHistoryEvent(
         transaction,
         stockAssetToAssignRef,
-        "Asignación Creada",
+        "Asignación Enviada",
         `Activo enviado a ${requestData.employeeName}. Transportadora: ${carrier}, Guía: ${trackingNumber}.`,
         actor
       );
@@ -462,13 +473,14 @@ export const processAssignmentRequest = async (
         stock: requestData.quantity,
         originalRequestId: requestId,
         originalReplacementRequestId: requestData.originalReplacementRequestId || null,
-        history: [],
+        // Inicializamos el historial con el evento de la solicitud original
+        history: [originalRequestEvent],
       });
 
       addAssetHistoryEvent(
         transaction,
         newAssetForEmployeeRef,
-        "Asignación Creada",
+        "Asignación Enviada",
         `Activo enviado a ${requestData.employeeName}. Transportadora: ${carrier}, Guía: ${trackingNumber}.`,
         actor
       );
